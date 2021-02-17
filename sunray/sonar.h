@@ -10,28 +10,27 @@
 #ifndef SONAR_H
 #define SONAR_H
 
-
-
 class Sonar {
-    public:      
-		bool enabled;
-	    int triggerLeftBelow;
-        int triggerCenterBelow;
-        int triggerRightBelow;
-	    void begin();            
+    public:
+        unsigned int distanceLeft; // cm
+        unsigned int distanceRight;
+        unsigned int distanceCenter;
+        bool enabled;
+
+        void begin();
         void run();
-	    bool obstacle();	    
-		bool nearObstacle();
-		unsigned int distanceLeft; // cm
-		unsigned int distanceRight;
-		unsigned int distanceCenter;  		
-		bool verboseOutput; 
-    protected:                 
-		unsigned int convertCm(unsigned int echoTime);
-		unsigned long nearObstacleTimeout;
+        bool obstacle();
+        bool nearObstacle();
+
+    protected:
+
+    private:
+        unsigned int triggerLeftBelow;
+        unsigned int triggerCenterBelow;
+        unsigned int triggerRightBelow;
+        unsigned long nearObstacleTimeout;
+
+        unsigned int convertCm(unsigned int echoTime);
 };
 
-
-
 #endif
-

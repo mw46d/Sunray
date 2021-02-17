@@ -74,8 +74,8 @@ unsigned long controlLoops = 0;
 float stateX = 0;  // position-east (m)
 float stateY = 0;  // position-north (m)
 float stateDelta = 0;  // direction (rad)
-float stateRoll = 0;
-float statePitch = 0;
+float stateRoll = -5000.0;           // Initialization marker
+float statePitch = -5000.0;          // Initialization marker
 float stateDeltaGPS = 0;
 float stateDeltaIMU = 0;
 float stateGroundSpeed = 0; // m/s
@@ -521,15 +521,16 @@ void readIMU(){
   unsigned long startTime = millis();
   bool avail = (imu.fifoAvailable() > 0);
   // check time for I2C access : if too long, there's an I2C issue and we need to restart I2C bus...
-  unsigned long duration = millis() - startTime;    
+  unsigned long duration = millis() - startTime;
+  startTime += duration;
   //CONSOLE.print("duration:");
-  //CONSOLE.println(duration);  
-  if ((duration > 10) || (millis() > imuDataTimeout)) {
-    if (millis() > imuDataTimeout){
-      CONSOLE.println("ERROR IMU data timeout");  
+  //CONSOLE.println(duration);
+  if ((duration > 10) || (startTime > imuDataTimeout)) {
+    if (startTime > imuDataTimeout){
+      CONSOLE.println("ERROR IMU data timeout");
     } else {
       CONSOLE.print("ERROR IMU timeout: ");
-      CONSOLE.println(duration);          
+      CONSOLE.println(duration);
     }
     stateSensor = SENS_IMU_TIMEOUT;
     motor.stopImmediately(true);    
@@ -555,12 +556,36 @@ void readIMU(){
       //CONSOLE.print(",");
       //CONSOLE.println(imu.az);
       #ifdef ENABLE_TILT_DETECTION
+        if (rollChange == -5000.0) {
+            stateRoll = imu.roll;
+        }
+        if (pitchChange == -5000.0) {
+            pitchChange = imu.pitch;
+        }
         rollChange += (imu.roll-stateRoll);
         pitchChange += (imu.pitch-statePitch);               
         rollChange = 0.95 * rollChange;
         pitchChange = 0.95 * pitchChange;
         statePitch = imu.pitch;
-        stateRoll = imu.roll;        
+        stateRoll = imu.roll;
+#ifdef IMU_DEBUG
+        {
+            static unsigned long nextLog = 0;
+            if (nextLog < startTime) {
+                nextLog = startTime + 1000;
+                CONSOLE.print("IMU ypr= ");
+                CONSOLE.print(imu.yaw / PI * 180.0);
+                CONSOLE.print(", ");
+                CONSOLE.print(imu.pitch / PI * 180.0);
+                CONSOLE.print(", ");
+                CONSOLE.print(imu.roll / PI * 180.0);
+                CONSOLE.print("  rollChange= ");
+                CONSOLE.print(rollChange / PI * 180.0);
+                CONSOLE.print("  pitchChange= ");
+                CONSOLE.println(pitchChange / PI * 180.0);
+            }
+        }
+#endif
         //CONSOLE.print(rollChange/PI*180.0);
         //CONSOLE.print(",");
         //CONSOLE.println(pitchChange/PI*180.0);
@@ -592,7 +617,7 @@ void readIMU(){
       //CONSOLE.print(stateDeltaIMU/PI*180.0);
       //CONSOLE.println();
       lastIMUYaw = imu.yaw;      
-      imuDataTimeout = millis() + 10000;
+      imuDataTimeout = startTime+ 10000;
     }     
   }     
 }
@@ -1376,7 +1401,3 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
   stateOp = op;  
   saveState();
 }
-
-
-
-
