@@ -32,7 +32,7 @@ class AmMotorDriver: public MotorDriver {
     void getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks) override;
   protected:
     void setMC33926(int pinDir, int pinPWM, int speed);
-
+    void setBrushless(int pinDir, int pinPWM, int speed);
 };
 
 class AmBatteryDriver : public BatteryDriver {
@@ -70,7 +70,20 @@ class AmStopButtonDriver: public StopButtonDriver {
   public:    
     void begin() override;
     void run() override;
-    bool triggered() override;  	  		    
+    bool triggered() override;
+  protected:
+    unsigned long nextControlTime;
+    bool pressed;  	  		    
+};
+
+class AmRainSensorDriver: public RainSensorDriver {
+  public:    
+    void begin() override;
+    void run() override;
+    bool triggered() override;
+  protected:
+    unsigned long nextControlTime;
+    bool isRaining;  	  		    
 };
 
 

@@ -21,6 +21,9 @@ volatile bool leftPressed = false;
 volatile bool rightPressed = false;
 
 
+bool faultActive  = LOW; 
+bool enableActive = LOW; 
+
 
 void AmRobotDriver::begin(){
 }
@@ -51,9 +54,21 @@ AmMotorDriver::AmMotorDriver(){
     
 
 void AmMotorDriver::begin(){
+  #ifdef MOTOR_DRIVER_BRUSHLESS
+    // logic for brushless drivers
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: yes");
+    faultActive  = LOW; 
+    enableActive = LOW; 
+  #else 
+    // logic for brushed drivers    
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: no");
+    faultActive  = LOW; 
+    enableActive = HIGH; 
+  #endif
+
   // left wheel motor
   pinMode(pinMotorEnable, OUTPUT);
-  digitalWrite(pinMotorEnable, HIGH);
+  digitalWrite(pinMotorEnable, enableActive);
   pinMode(pinMotorLeftPWM, OUTPUT);
   pinMode(pinMotorLeftDir, OUTPUT);
   pinMode(pinMotorLeftSense, INPUT);
@@ -71,7 +86,7 @@ void AmMotorDriver::begin(){
   pinMode(pinMotorMowSense, INPUT);
   //pinMode(pinMotorMowRpm, INPUT);
   pinMode(pinMotorMowEnable, OUTPUT);
-  digitalWrite(pinMotorMowEnable, HIGH);
+  digitalWrite(pinMotorMowEnable, enableActive);
   pinMode(pinMotorMowFault, INPUT);
 
   // odometry
@@ -93,7 +108,7 @@ void AmMotorDriver::run(){
 }
 
 
-// MC33926 motor driver
+// brushed motor driver (MC33926)
 // Check http://forum.pololu.com/viewtopic.php?f=15&t=5272#p25031 for explanations.
 //(8-bit PWM=255, 10-bit PWM=1023)
 // IN1 PinPWM         IN2 PinDir
@@ -103,53 +118,88 @@ void AmMotorDriver::setMC33926(int pinDir, int pinPWM, int speed) {
   //DEBUGLN(speed);
   if (speed < 0) {
     digitalWrite(pinDir, HIGH) ;
-    pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));
+    pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));     
   } else {
     digitalWrite(pinDir, LOW) ;
     pinMan.analogWrite(pinPWM, ((byte)speed));
   }
 }
 
+
+// brushless motor driver
+//(8-bit PWM=255, 10-bit PWM=1023)
+// IN1 PinPWM         IN2 PinDir
+// PWM                L     Forward
+// PWM                H     Reverse
+// verhindert dass das PWM Signal 0 wird. Der Driver braucht einen kurzen Impuls um das PWM zu erkennen.
+// Wenn der z.B. vom max. PWM Wert auf 0 bzw. das Signal auf Low geht, behält er den vorherigen Wert bei und der Motor stoppt nicht
+void AmMotorDriver::setBrushless(int pinDir, int pinPWM, int speed) {
+  //DEBUGLN(speed);
+  if (speed < 0) {
+    digitalWrite(pinDir, HIGH) ;
+    if (speed >= -2) speed = -2;                         
+    pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
+  } else {
+    digitalWrite(pinDir, LOW) ;
+    if (speed <= 2) speed = 2;                           
+    pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
+  }
+}
+
     
 void AmMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){
-  setMC33926(pinMotorLeftDir, pinMotorLeftPWM, leftPwm);
-  setMC33926(pinMotorRightDir, pinMotorRightPWM, rightPwm);
-  setMC33926(pinMotorMowDir, pinMotorMowPWM, mowPwm);
+  #ifdef MOTOR_DRIVER_BRUSHLESS
+    setBrushless(pinMotorLeftDir, pinMotorLeftPWM, leftPwm);
+    setBrushless(pinMotorRightDir, pinMotorRightPWM, rightPwm);
+    setBrushless(pinMotorMowDir, pinMotorMowPWM, mowPwm);
+  #else
+    setMC33926(pinMotorLeftDir, pinMotorLeftPWM, leftPwm);
+    setMC33926(pinMotorRightDir, pinMotorRightPWM, rightPwm);
+    setMC33926(pinMotorMowDir, pinMotorMowPWM, mowPwm);
+  #endif
 }
 
 
 void AmMotorDriver::getMotorFaults(bool &leftFault, bool &rightFault, bool &mowFault){ 
-  if (digitalRead(pinMotorLeftFault) == LOW) {
+  if (digitalRead(pinMotorLeftFault) == faultActive) {
     leftFault = true;
   }
-  if  (digitalRead(pinMotorRightFault) == LOW) {
+  if  (digitalRead(pinMotorRightFault) == faultActive) {
     rightFault = true;
   }
-  if (digitalRead(pinMotorMowFault) == LOW) {
+  if (digitalRead(pinMotorMowFault) == faultActive) {
     mowFault = true;
   }
 }
 
 void AmMotorDriver::resetMotorFaults(){
-  if (digitalRead(pinMotorLeftFault) == LOW) {
-    digitalWrite(pinMotorEnable, LOW);
-    digitalWrite(pinMotorEnable, HIGH);
+  if (digitalRead(pinMotorLeftFault) == faultActive) {
+    digitalWrite(pinMotorEnable, !enableActive);
+    digitalWrite(pinMotorEnable, enableActive);
   }
-  if  (digitalRead(pinMotorRightFault) == LOW) {
-    digitalWrite(pinMotorEnable, LOW);
-    digitalWrite(pinMotorEnable, HIGH);
+  if  (digitalRead(pinMotorRightFault) == faultActive) {
+    digitalWrite(pinMotorEnable, !enableActive);
+    digitalWrite(pinMotorEnable, enableActive);
   }
-  if (digitalRead(pinMotorMowFault) == LOW) {
-    digitalWrite(pinMotorMowEnable, LOW);
-    digitalWrite(pinMotorMowEnable, HIGH);
+  if (digitalRead(pinMotorMowFault) == faultActive) {
+    digitalWrite(pinMotorMowEnable, !enableActive);
+    digitalWrite(pinMotorMowEnable, enableActive);
   }
 }
 
 void AmMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent){
-    float scale       = 1.905;   // ADC voltage to amp   
-    leftCurrent = ((float)ADC2voltage(analogRead(pinMotorRightSense))) *scale;
-    rightCurrent = ((float)ADC2voltage(analogRead(pinMotorLeftSense))) *scale;
-    mowCurrent = ((float)ADC2voltage(analogRead(pinMotorMowSense))) *scale  *2;	          
+    float offset      = -1.65;
+    #ifdef MOTOR_DRIVER_BRUSHLESS
+      float scale       = 7.57;   // ADC voltage to amp      
+      leftCurrent = (((float)ADC2voltage(analogRead(pinMotorRightSense))) + offset) *scale;
+      rightCurrent = (((float)ADC2voltage(analogRead(pinMotorLeftSense))) + offset) *scale;
+      mowCurrent = (((float)ADC2voltage(analogRead(pinMotorMowSense))) + offset) *scale; 
+    #else
+      float scale       = 1.905;   // ADC voltage to amp      
+      leftCurrent = ((float)ADC2voltage(analogRead(pinMotorRightSense))) *scale;
+      rightCurrent = ((float)ADC2voltage(analogRead(pinMotorLeftSense))) *scale;
+      mowCurrent = ((float)ADC2voltage(analogRead(pinMotorMowSense))) *scale  *2;	          
+    #endif
 }
 
 void AmMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks){
@@ -299,15 +349,38 @@ void AmBumperDriver::run(){
 
 
 void AmStopButtonDriver::begin(){
+  nextControlTime = 0;
+  pressed = false;  
 }
 
 void AmStopButtonDriver::run(){
-
+  unsigned long t = millis();
+  if (t < nextControlTime) return;
+  nextControlTime = t + 100;                                       // save CPU resources by running at 10 Hz
+  pressed = (digitalRead(pinButton)== LOW);
 }
 
 bool AmStopButtonDriver::triggered(){
-  return false; 
+  return pressed;
 }
 
 
+// ------------------------------------------------------------------------------------
+
+
+void AmRainSensorDriver::begin(){
+  nextControlTime = 0;
+  isRaining = false;  
+}
+
+void AmRainSensorDriver::run(){
+  unsigned long t = millis();
+  if (t < nextControlTime) return;
+  nextControlTime = t + 100;                                       // save CPU resources by running at 10 Hz
+  isRaining = (digitalRead(pinRain)== LOW);
+}
+
+bool AmRainSensorDriver::triggered(){
+  return isRaining;
+}
 

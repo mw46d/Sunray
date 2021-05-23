@@ -584,7 +584,7 @@ bool Map::save(){
   bool res = true;
 #if defined(ENABLE_SD_RESUME)  
   CONSOLE.print("map save... ");
-  mapFile = SD.open("map.bin", O_WRITE | O_CREAT);
+  mapFile = SD.open("map.bin", FILE_CREATE); // O_WRITE | O_CREAT);
   if (!mapFile){        
     CONSOLE.println("ERROR opening file for writing");
     return false;
@@ -1151,6 +1151,7 @@ bool Map::nextDockPoint(bool sim){
       } else return false;        
     }  
   }
+  return false;
 }
 
 // get next free point  
@@ -1518,7 +1519,7 @@ int Map::findNextNeighbor(NodeList &nodes, PolygonList &obstacles, Node &node, i
                float dist = distance(*node.point, sectPt);          
                //CONSOLE.print("dist=");
                //CONSOLE.println(dist);
-               if (dist > 1){ safe = false; break; } // entering perimeter with long distance is not safe                             
+               if (dist > ALLOW_ROUTE_OUTSIDE_PERI_METER){ safe = false; break; } // entering perimeter with long distance is not safe                             
                if (linePolygonIntersectionCount( *node.point, *pt, obstacles.polygons[idx3]) != 1){ safe = false; break; }
                continue;           
              } else { safe = false; break; }                                          
@@ -1532,7 +1533,7 @@ int Map::findNextNeighbor(NodeList &nodes, PolygonList &obstacles, Node &node, i
                float dist = distance(*node.point, sectPt);          
                //CONSOLE.print("dist=");
                //CONSOLE.println(dist);
-               if (dist > 1){ safe = false; break; } // exiting obstacle with long distance is not safe                             
+               if (dist > ALLOW_ROUTE_OUTSIDE_PERI_METER){ safe = false; break; } // exiting obstacle with long distance is not safe                             
                continue;           
              } else { safe = false; break; }                                          
          }

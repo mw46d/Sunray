@@ -9,8 +9,8 @@
 #ifndef ROBOT_H
 #define ROBOT_H
 
-
 #include "motor.h"
+#include "config.h"
 #include "src/driver/AmRobotDriver.h"
 #include "src/driver/SerialRobotDriver.h"
 #include "battery.h"
@@ -21,10 +21,17 @@
 #include "VL53L0X.h"
 #include "map.h"   
 #include "src/ublox/ublox.h"
-#include "src/esp/WiFiEsp.h"
+#include "src/skytraq/skytraq.h"
+#ifdef __linux__
+  #include <BridgeClient.h>
+  #include "src/ntrip/ntripclient.h"
+#else
+  #include "src/esp/WiFiEsp.h"
+#endif
+#include "PubSubClient.h"
 
 
-#define VER "Ardumower Sunray,1.0.168"
+#define VER "Ardumower Sunray,1.0.186"
 
 enum OperationType {
       OP_IDLE,      
@@ -55,11 +62,18 @@ enum Sensor {
       SENS_STOP_BUTTON,
 };
 
+#ifndef __linux__
+  #define FILE_CREATE  (O_WRITE | O_CREAT)
+#endif
+
 extern OperationType stateOp; // operation
 extern Sensor stateSensor; // last triggered sensor
 extern float stateX;  // position-east (m)
 extern float stateY;  // position-north (m)
 extern float stateDelta;  // direction (rad)
+extern String stateOpText;  // current operation as text
+extern String gpsSolText; // current gps solution as text
+extern int stateButton;  // button state
 
 extern float setSpeed; // linear speed (m/s)
 extern int fixTimeout;
@@ -93,12 +107,12 @@ extern float stateGroundSpeed; // m/s
 
 extern WiFiEspClient client;
 extern WiFiEspServer server;
+extern PubSubClient mqttClient;
+extern bool hasClient;
 
 extern unsigned long controlLoops;
 extern bool imuIsCalibrating;
 extern bool wifiFound;
-
-extern "C" char* sbrk(int incr);
 
 #ifdef DRV_SERIAL_ROBOT
   extern SerialRobotDriver robotDriver;
@@ -106,12 +120,14 @@ extern "C" char* sbrk(int incr);
   extern SerialBatteryDriver batteryDriver;
   extern SerialBumperDriver bumper;
   extern SerialStopButtonDriver stopButton;
+  extern SerialRainSensorDriver rainDriver;
 #else
   extern AmRobotDriver robotDriver;
   extern AmMotorDriver motorDriver;
   extern AmBatteryDriver batteryDriver;
   extern AmBumperDriver bumper;
   extern AmStopButtonDriver stopButton;
+  extern AmRainSensorDriver rainDriver;
 #endif
 
 extern Motor motor;
@@ -122,7 +138,11 @@ extern Sonar sonar;
 extern VL53L0X tof;
 extern PinManager pinMan;
 extern Map maps;
-extern UBLOX gps;
+#ifdef GPS_SKYTRAQ
+  extern SKYTRAQ gps;
+#else
+  extern UBLOX gps;
+#endif
 
 int freeMemory();
 void start();
@@ -130,6 +150,6 @@ void run();
 void setOperation(OperationType op, bool allowRepeat = false, bool initiatedbyOperator = false);
 void triggerObstacle();
 void sensorTest();
-
+void updateStateOpText();
 
 #endif

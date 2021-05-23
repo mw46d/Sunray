@@ -18,9 +18,9 @@
 // Conversion from uS to distance (round result to nearest cm or inch).
 #define NewPingConvert(echoTime, conversionFactor) (max(((unsigned int)echoTime + conversionFactor / 2) / conversionFactor, (echoTime ? 1 : 0)))
 
-RunningMedian<unsigned int,3> sonarLeftMeasurements;
-RunningMedian<unsigned int,3> sonarRightMeasurements;
-RunningMedian<unsigned int,3> sonarCenterMeasurements;
+RunningMedian<unsigned int,9> sonarLeftMeasurements;
+RunningMedian<unsigned int,9> sonarRightMeasurements;
+RunningMedian<unsigned int,9> sonarCenterMeasurements;
 
 volatile unsigned long startTime = 0;
 volatile unsigned long echoTime = 0;
