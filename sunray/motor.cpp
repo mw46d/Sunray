@@ -168,7 +168,7 @@ void Motor::run() {
     }
   }
     
-  sense();        
+  sense();
   
   if ((!resetMotorFault) && (checkFault())) {
     stopImmediately(true);
@@ -296,8 +296,6 @@ bool Motor::checkFault() {
 
 // measure motor currents
 void Motor::sense(){
-  if (millis() < nextSenseTime) return;
-  nextSenseTime = millis() + 20;
   motorDriver.getMotorCurrent(motorLeftSense, motorRightSense, motorMowSense);
   float lp = 0.995; // 0.9
   motorRightSenseLP = lp * motorRightSenseLP + (1.0-lp) * motorRightSense;

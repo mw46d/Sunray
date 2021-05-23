@@ -146,8 +146,6 @@ bool imuFound = false;
 float lastIMUYaw = 0; 
 
 bool wifiFound = false;
-char ssid[] = WIFI_SSID;      // your network SSID (name)
-char pass[] = WIFI_PASS;        // your network password
 WiFiEspServer server(80);
 WiFiEspClient client = NULL;
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
@@ -393,40 +391,57 @@ void startWIFI(){
     CONSOLE.println("ERROR: WiFi not present");       
   } else {
     wifiFound = true;
-    CONSOLE.println("WiFi found!");       
-    if (START_AP){
-      CONSOLE.print("Attempting to start AP ");  
-      CONSOLE.println(ssid);
-      // uncomment these two lines if you want to set the IP address of the AP
-      #ifdef WIFI_IP  
-        IPAddress localIp(WIFI_IP);
-        WiFi.configAP(localIp);  
-      #endif            
-      // start access point
-      status = WiFi.beginAP(ssid, 10, pass, ENC_TYPE_WPA2_PSK);         
-    } else {
-      while ( status != WL_CONNECTED) {
+    CONSOLE.println("WiFi found!");
+
+    if (!START_AP) {
+      int wifi_retry_count = 5;
+
+      while (status != WL_CONNECTED && wifi_retry_count > 0) {
         CONSOLE.print("Attempting to connect to WPA SSID: ");
-        CONSOLE.println(ssid);      
-        status = WiFi.begin(ssid, pass);
-        #ifdef WIFI_IP  
+        CONSOLE.println(WIFI_SSID);
+        status = WiFi.begin(WIFI_SSID, WIFI_PASS);
+        wifi_retry_count--;
+      }
+
+      if (status == WL_CONNECTED) {
+#ifdef WIFI_IP
           IPAddress localIp(WIFI_IP);
-          WiFi.config(localIp);  
-        #endif
-      }    
-    }        
+          WiFi.config(localIp);
+#endif
+      }
+      else {
+        CONSOLE.println("Giving up on connecting to WiFi");
+      }
+    }
+
+    if (status != WL_CONNECTED) {
+#ifndef WIFI_AP_SSID
+#define WIFI_AP_SSID WIFI_SSID
+#define WIFI_AP_PASS WIFI_PASS
+#define WIFI_AP_IP WIFI_IP
+#endif
+      CONSOLE.print("Attempting to start AP ");
+      CONSOLE.println(WIFI_AP_SSID);
+#ifdef WIFI_AP_IP
+        IPAddress localIp(WIFI_AP_IP);
+        WiFi.configAP(localIp);
+#endif
+      // start access point
+      status = WiFi.beginAP(WIFI_AP_SSID, 10, WIFI_AP_PASS, ENC_TYPE_WPA2_PSK);
+    }
+
     #if defined(ENABLE_UDP)
-      udpSerial.beginUDP();  
-    #endif    
-    CONSOLE.print("You're connected with SSID=");    
+      udpSerial.beginUDP();
+    #endif
+    CONSOLE.print("You're connected with SSID=");
     CONSOLE.print(WiFi.SSID());
-    CONSOLE.print(" and IP=");        
-    IPAddress ip = WiFi.localIP();    
-    CONSOLE.println(ip);   
+    CONSOLE.print(" and IP=");
+    IPAddress ip = WiFi.localIP();
+    CONSOLE.println(ip);
     if (ENABLE_SERVER){
       server.begin();
     }
-  }    
+  }
 }
 
 
@@ -556,11 +571,11 @@ void readIMU(){
       //CONSOLE.print(",");
       //CONSOLE.println(imu.az);
       #ifdef ENABLE_TILT_DETECTION
-        if (rollChange == -5000.0) {
+        if (stateRoll == -5000.0) {
             stateRoll = imu.roll;
         }
-        if (pitchChange == -5000.0) {
-            pitchChange = imu.pitch;
+        if (statePitch == -5000.0) {
+            statePitch = imu.pitch;
         }
         rollChange += (imu.roll-stateRoll);
         pitchChange += (imu.pitch-statePitch);               

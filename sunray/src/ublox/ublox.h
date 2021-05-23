@@ -62,6 +62,13 @@ class UBLOX{
     unsigned long chksumErrorCounter;
     unsigned long dgpsChecksumErrorCounter;
     unsigned long dgpsPacketCounter;    
+
+    uint16_t mwYear;
+    uint8_t mwMonth;
+    uint8_t mwDay;
+    uint8_t mwHour;
+    uint8_t mwMinute;
+    uint8_t mwSecond;
     
     UBLOX(HardwareSerial& bus,uint32_t baud);
     void begin();

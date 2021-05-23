@@ -10,6 +10,9 @@
 #include "../../robot.h"
 
 
+volatile unsigned long leftReleaseTime = 0;
+volatile unsigned long rightReleaseTime = 0;
+
 volatile int odomTicksLeft  = 0;
 volatile int odomTicksRight = 0;
 
@@ -231,11 +234,27 @@ void AmBatteryDriver::keepPowerOn(bool flag){
 
 // ------------------------------------------------------------------------------------
 void BumperLeftInterruptRoutine(){
-  leftPressed = (digitalRead(pinBumperLeft) == LOW);  
+  bool lP = (digitalRead(pinBumperLeft) == LOW);
+
+  if (lP) {
+    leftPressed = lP;
+    leftReleaseTime = 0;
+  }
+  else {
+    leftReleaseTime = millis();
+  }
 }
 
 void BumperRightInterruptRoutine(){
-  rightPressed = (digitalRead(pinBumperRight) == LOW);  
+  bool rP = (digitalRead(pinBumperRight) == LOW);
+
+  if (rP) {
+    rightPressed = rP;
+    rightReleaseTime = 0;
+  }
+  else {
+    rightReleaseTime = millis();
+  }
 }
 
 
@@ -256,7 +275,23 @@ bool AmBumperDriver::obstacle(){
 }
     
 
-void AmBumperDriver::run(){  
+void AmBumperDriver::run(){
+  unsigned long t = millis();
+  unsigned long t1;
+
+  t1 = leftReleaseTime;
+  if (t1 > 0 && t - t1 > 100 && leftPressed && t1 == leftReleaseTime) { // 0.1s 'Debouncing'
+                                                                        // somewhat strange conditions to avoid stale values
+    leftPressed = false;
+    leftReleaseTime = 0;
+  }
+
+  t1 = rightReleaseTime;
+  if (t1 > 0 && t - t1 > 100 && rightPressed && t1 == rightReleaseTime) { // 0.1s 'Debouncing'
+                                                                        // somewhat strange conditions to avoid stale values
+    rightPressed = false;
+    rightReleaseTime = 0;
+  }
 }
 
 

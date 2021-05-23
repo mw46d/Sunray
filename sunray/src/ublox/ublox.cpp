@@ -78,7 +78,7 @@ bool UBLOX::configure(){
   // uart2 baudrate  (Xbee/NTRIP)
   setValueSuccess &= configGPS.addCfgValset32(0x40530001, 115200); // CFG-UART2-BAUDRATE
   // ----- uart1 messages (Ardumower) -----------------  
-  setValueSuccess &= configGPS.addCfgValset8(0x20910007, 0); // CFG-MSGOUT-UBX_NAV_PVT_UART1   (off)
+  setValueSuccess &= configGPS.addCfgValset8(0x20910007, 20); // CFG-MSGOUT-UBX_NAV_PVT_UART1   (every 5 solutions)
   setValueSuccess &= configGPS.addCfgValset8(0x2091008e, 1); // CFG-MSGOUT-UBX_NAV_RELPOSNED_UART1  (every solution)
   setValueSuccess &= configGPS.addCfgValset8(0x20910034, 1); // CFG-MSGOUT-UBX_NAV_HPPOSLLH_UART1   (every solution)
   setValueSuccess &= configGPS.addCfgValset8(0x20910043, 1); // CFG-MSGOUT-UBX_NAV_VELNED_UART1     (every solution)
@@ -288,6 +288,14 @@ void UBLOX::dispatchMessage() {
           case 0x07:
             { // UBX-NAV-PVT
               iTOW = (unsigned long)this->unpack_int32(0);
+
+              mwYear = (uint16_t)this->unpack_int16(4);
+              mwMonth = (uint8_t)this->unpack_int8(6);
+              mwDay = (uint8_t)this->unpack_int8(7);
+              mwHour = (uint8_t)this->unpack_int8(8);
+              mwMinute = (uint8_t)this->unpack_int8(9);
+              mwSecond = (uint8_t)this->unpack_int8(10);
+
               //numSV = this->unpack_int8(23);               
               if (verbose) CONSOLE.println("UBX-NAV-PVT");
             }
@@ -356,7 +364,7 @@ void UBLOX::dispatchMessage() {
                 bool health = ((sigFlags & 3) == 1);                                                    
                 if (health){       // signal is healthy               
                   if (prUsed){     // pseudorange has been used (indicates satellites will be also used for carrier correction)
-                  //if (cno > 0){  // signal has some strength (carriar-to-noise)
+                  //if (cno > 0){ } // signal has some strength (carriar-to-noise)
                     healthycnt++;                   
                     if (crCorrUsed){  // Carrier range corrections have been used
                       /*CONSOLE.print(sigFlags);
@@ -438,9 +446,13 @@ void UBLOX::dispatchMessage() {
                 CONSOLE.println();
               }              
             }
-            break;            
+            break;
+          default:
+            {
+              CONSOLE.print("UBlox 0x01 0x"); CONSOLE.println(this->msgid, HEX);
+            }
         }
-        break;      
+        break;
       case 0x02:
         switch (this->msgid) {
           case 0x32: 
@@ -452,9 +464,17 @@ void UBLOX::dispatchMessage() {
               dgpsAge = millis();
             }
             break;            
+          default:
+            {
+              CONSOLE.print("UBlox 0x02 0x"); CONSOLE.println(this->msgid, HEX);
+            }
         }
         break;
-    }    
+      default:
+        {
+          CONSOLE.print("UBlox 0x"); CONSOLE.print(this->msgclass, HEX); CONSOLE.print(" 0x"); CONSOLE.println(this->msgid, HEX);
+        }
+    }
     if (verbose) CONSOLE.println();
 }
 
