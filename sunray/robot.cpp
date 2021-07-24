@@ -456,6 +456,7 @@ void startWIFI() {
   wifiFound = true;
   CONSOLE.print("WiFi found! ESP8266 firmware: ");
   CONSOLE.println(WiFi.firmwareVersion());       
+#endif
 
   if (!START_AP) {
     int wifi_retry_count = 5;
@@ -510,7 +511,7 @@ void startWIFI() {
     CONSOLE.println("MQTT: enabled");
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
-  }  
+  }
 }
 
 
