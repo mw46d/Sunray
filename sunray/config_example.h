@@ -13,7 +13,7 @@
 
    requirements:
    + Ardumower chassis and Ardumower kit mowing and gear motors   
-   + Ardumower PCB 1.3 
+   + Ardumower PCB 1.3/1.4 
    +   Adafruit Grand Central M4 (highly recommended) or Arduino Due 
    +   Ardumower BLE UART module (HM-10/CC2540/CC2541)
    +   optional: Ardumower IMU (MPU6050/MPU9150/MPU9250/MPU9255) - choose your IMU below
@@ -64,7 +64,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // see Wiki on how to install the BLE module and configure the jumpers:
 // https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#Bluetooth_BLE_UART_module
 #define ENABLE_PASS   1        // comment out to disable password authentication
-#define PASS          123456   // choose password for WiFi/BLE communication
+#define PASS          123456   // choose password for WiFi/BLE communication (NOTE: has to match the connection password in the App!)
 
 // -------- IMU sensor  ----------------------------------------------
 // choose one MPU IMU (make sure to connect AD0 on the MPU board to 3.3v)
@@ -88,7 +88,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#SD_card_module
 // https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#SD_card_logging
 //#define ENABLE_SD      1                 // enable SD card services (resuming, logging)? (uncomment to activate)
-//#define ENABLE_SD_LOG  1                 // enable SD card logging? (uncomment to activate)
+//#define ENABLE_SD_LOG  1                 // enable SD card logging? uncomment to activate (not recommended - WARNING: may slow down system!)
 //#define ENABLE_SD_RESUME  1              // enable SD card map load/resume on reset? (uncomment to activate)
 
 
@@ -101,6 +101,10 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // driving the same distance on the ground (without connected GPS): 
 // https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#Odometry_test
 // https://forum.ardumower.de/threads/andere-r%C3%A4der-wie-config-h-%C3%A4ndern.23865/post-41732
+
+// NOTE: if using non-default Ardumower chassis and your freewheel is at frontside (gear motors at backside), have may have to swap motor cables, 
+// more info here: https://wiki.ardumower.de/index.php?title=Ardumower_Chassis_%27mountain_mod%27)
+#define FREEWHEEL_IS_AT_BACKSIDE   true   // default Ardumower: true   (change to false, if your freewheel is at frontside) - this is used for obstacle avoidance
 #define WHEEL_BASE_CM         36         // wheel-to-wheel distance (cm)        
 #define WHEEL_DIAMETER        250        // wheel diameter (mm)                 
 
@@ -127,6 +131,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 
 
 // ----- gear motors --------------------------------------------------
+// for brushless motors, study the sections (drivers, adapter, protection etc.) in the Wiki (https://wiki.ardumower.de/index.php?title=DIY_Brushless_Driver_Board)
 // #define MOTOR_DRIVER_BRUSHLESS   1     // uncomment this for new brushless motor drivers
 
 #define MOTOR_OVERLOAD_CURRENT 0.8    // gear motors overload current (amps)
@@ -139,6 +144,22 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define MOTOR_PID_KP     2.0    // do not change 2.0 (for non-Ardumower motors or if the motor speed control is too fast you may try: KP=1.0, KI=0, KD=0)
 #define MOTOR_PID_KI     0.03   // do not change 0.03
 #define MOTOR_PID_KD     0.03   // do not change 0.03
+
+//#define MOTOR_LEFT_SWAP_DIRECTION 1  // uncomment to swap left motor direction
+//#define MOTOR_RIGHT_SWAP_DIRECTION 1  // uncomment to swap right motor direction
+
+// ------------ dynamic gear motors speed ----------------
+// speed will be adjusted by the mowing motor current. If USE_MOWMOTOR_CURRENT_AVERAGE is set to false, the Speed 
+// will be changed if the mow Current is lower or higher than MOWMOTOR_CURRENT_FACTOR * MOW_OVERLOAD_CURRENT.
+// If USE_MOWMOTOR_CURRENT_AVERAGE is set to true the algorithm will detect the current at the middle PWM of the mowMotor.
+// The mowing average will be calculate over 10000 loops and start at MOWMOTOR_CURRENT_FACTOR.
+#define ENABLE_DYNAMIC_MOWER_SPEED false
+#define SPEED_ACCELERATION 0.005 // Speed factor will be changed with every programm loop 
+
+#define SPEED_FACTOR_MAX 1.2
+#define SPEED_FACTOR_MIN 0.5
+#define USE_MOWMOTOR_CURRENT_AVERAGE true
+#define MOWMOTOR_CURRENT_FACTOR 0.25
 
 
 // ----- mowing motor -------------------------------------------------
@@ -159,6 +180,14 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // should the motor fault (error) detection be enabled? 
 #define ENABLE_FAULT_DETECTION  true
 //#define ENABLE_FAULT_DETECTION  false       // use this if you keep getting 'motor error'
+
+// ----------- dynamic mowingm motor RPM --------------
+// RPM of the mow motor will be adjust over the actual current of the mow motor. If the motor needs more current the PWM will be higher.
+// it can be used 3 different functions for the calculation of the PWM depended´nt on the mowMotor current. The root-Function is recommended
+#define ENABLE_DYNAMIC_MOWMOTOR false // set true to activate, set false to deactivate
+#define DYNAMIC_MOWMOTOR_ALGORITHM 2 // 1 - linear; 2 - root-Function; 3 - square-Function
+#define MIN_MOW_RPM 170   //minimum value of mow RPM
+#define MAX_MOW_RPM 255   // maximum value is 255
 
 
 // ------ WIFI module (ESP8266 ESP-01 with ESP firmware 2.2.1) --------------------------------
@@ -196,7 +225,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define NTRIP_USER "user"
 #define NTRIP_PASS "pass"
 
-// ------ MQTT (highly experimental - ENABLE_SERVER must be set to false for this to work :-/ ) -----------------------------
+// ------ MQTT (for ESP8266 only, highly experimental - ENABLE_SERVER must be set to false for this to work :-/ ) -----------------------------
 // you can access your robot using a MQTT broker - choose a topic prefix for your robot below - available MQTT topics:
 // robot1/cmd           (cmd can be: start, stop, dock)
 // robot1/op            (current robot operation as text)
@@ -256,7 +285,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define BAT_FULL_VOLTAGE  28.7  // start mowing again at this voltage
 #define BAT_FULL_CURRENT  0.2   // start mowing again below this charging current (amps)
 
-// https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#Automatic_robot_switch_off
+// https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#Automatic_battery_switch_off
 #define BAT_SWITCH_OFF_IDLE  false         // switch off if idle (JP8 must be set to autom.)
 #define BAT_SWITCH_OFF_UNDERVOLTAGE  true  // switch off if undervoltage (JP8 must be set to autom.)
 
@@ -274,58 +303,82 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 
 //#define GPS_SKYTRAQ  1               // comment for ublox gps, uncomment for skytraq gps 
 
-//#define REQUIRE_VALID_GPS  true       // mower will pause if no float and no fix GPS solution during mowing
-#define REQUIRE_VALID_GPS  false    // mower will continue to mow if no float or no fix solution
+#define REQUIRE_VALID_GPS  true       // mower will pause if no float and no fix GPS solution during mowing (recommended)
+//#define REQUIRE_VALID_GPS  false    // mower will continue to mow if no float or no fix solution (not recommended)
 
-#define GPS_SPEED_DETECTION true  // will detect obstacles via GPS feedback (no speed)
+#define GPS_SPEED_DETECTION true  // will detect obstacles via GPS feedback (no speed)  - recommended
 //#define GPS_SPEED_DETECTION false
 
 // detect if robot is actually moving (obstacle detection via GPS feedback)
-#define GPS_MOTION_DETECTION          true    // if robot is not moving trigger obstacle avoidance
+#define GPS_MOTION_DETECTION          true    // if robot is not moving trigger obstacle avoidance (recommended)
 //#define GPS_MOTION_DETECTION        false   // ignore if robot is not moving
-#define GPS_MOTION_DETECTION_TIMEOUT  10      // timeout for motion (secs)
+#define GPS_MOTION_DETECTION_TIMEOUT  5      // timeout for motion (secs)
 
 // configure ublox f9p with optimal settings (will be stored in f9p RAM only)
 // NOTE: due to a PCB1.3 bug GPS_RX pin is not working and you have to fix this by a wire:
 // https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#PCB1.3_GPS_pin_fix_and_wire_fix   (see 'GPS wire fix')
+#define GPS_REBOOT_RECOVERY  true // allow GPS receiver rebooting (recommended - requires GPS wire fix above! otherwise firmware will stuck at boot!)
+//#define GPS_REBOOT_RECOVERY   false  // do not allow rebooting GPS receiver (no GPS wire fix required)
+
 #define GPS_CONFIG   true     // configure GPS receiver (recommended - requires GPS wire fix above! otherwise firmware will stuck at boot!)
 //#define GPS_CONFIG   false  // do not configure GPS receiver (no GPS wire fix required)
 
-#define GPS_CONFIG_FILTER   true     // use signal strength filter? (recommended to get rid of 'FIX jumps')
-//#define GPS_CONFIG_FILTER   false     // use this if you have difficulties to get a FIX solution
+#define GPS_CONFIG_FILTER   true     // use signal strength filter? (recommended to get rid of 'FIX jumps') - adjust filter settings below
+//#define GPS_CONFIG_FILTER   false     // use this if you have difficulties to get a FIX solution (uses ublox default filter settings)
+#define CPG_CONFIG_FILTER_MINELEV  10   // Min SV elevation degree: 14 (high elevation, less robust), 10 (low elevation, robust) 
+#define CPG_CONFIG_FILTER_NCNOTHRS 10   // C/N0 Threshold #SVs: 10 (robust), 6 (less robust)
+#define CPG_CONFIG_FILTER_CNOTHRS  30   // 30 dbHz (robust), 13 dbHz (less robust)
 
 
-// ------ experimental options -------------------------
+// ------ obstacle detection and avoidance  -------------------------
 
-#define OSTACLE_AVOIDANCE true   // try to find a way around obstacle
-//#define OSTACLE_AVOIDANCE false  // stop robot on obstacle
-#define OBSTACLE_DIAMETER 1.2   // choose diameter of obstacles placed in front of robot (m) for obstacle avoidance
-
-// detect robot being kidnapped? robot will go into error if distance to tracked path is greater than 1m
-//#define KIDNAP_DETECT true
-#define KIDNAP_DETECT false
-
-// drive curves smoothly?
-//#define SMOOTH_CURVES  true
-#define SMOOTH_CURVES  false
-
-
-#define ENABLE_PATH_FINDER  true     // path finder is experimental (can be slow - you may have to wait until robot actually starts)
+#define ENABLE_PATH_FINDER  true     // path finder calculates routes around exclusions and obstacles 
 //#define ENABLE_PATH_FINDER  false
 #define ALLOW_ROUTE_OUTSIDE_PERI_METER 1.0   // max. distance (m) to allow routing from outside perimeter 
-                                              // (increase if you get 'no map route' errors near perimeter)
+// (increase if you get 'no map route' errors near perimeter)
 
+#define OBSTACLE_DETECTION_ROTATION true // detect robot rotation stuck (requires IMU)
+// #define OBSTACLE_DETECTION_ROTATION false   // NOTE: recommended to turn this off for slope environment   
+
+#define OBSTACLE_AVOIDANCE true   // try to find a way around obstacle
+//#define OBSTACLE_AVOIDANCE false  // stop robot on obstacle
+#define OBSTACLE_DIAMETER 1.2   // choose diameter of obstacles placed in front of robot (m) for obstacle avoidance
+
+// detect robot being kidnapped? robot will try GPS recovery if distance to tracked path is greater than a certain value
+// (false GPS fix recovery), and if that fails go into error 
+#define KIDNAP_DETECT true  // recommended
+//#define KIDNAP_DETECT false
+#define KIDNAP_DETECT_ALLOWED_PATH_TOLERANCE 1.0  // allowed path tolerance (m) 
+
+
+// ------ docking --------------------------------------
 // is a docking station available?
 #define DOCKING_STATION true   // use this if docking station available and mower should dock automatically
 //#define DOCKING_STATION false    // mower will just stop after mowing instead of docking automatically 
+
+#define DOCK_IGNORE_GPS false     // use GPS fix in docking station and IMU for GPS float/invalid
+//#define DOCK_IGNORE_GPS true     // ignore GPS fix in docking station and use IMU-only (use this if robot gets false GPS fixes in your docking station)
 
 //#define DOCK_AUTO_START true     // robot will automatically continue mowing after docked automatically
 #define DOCK_AUTO_START false      // robot will not automatically continue mowing after docked automatically
 
 
+// ---- path tracking -----------------------------------
 // stanley control for path tracking - determines gain how fast to correct for lateral path errors
-#define STANLEY_CONTROL_K_NORMAL  0.5   // 0.5 for path tracking control when in normal or fast motion
-#define STANLEY_CONTROL_K_SLOW    0.1   // 0.1 for path tracking control when in slow motion (e.g. docking tracking)
+#define STANLEY_CONTROL_P_NORMAL  3.0   // 3.0 for path tracking control (angular gain) when mowing
+#define STANLEY_CONTROL_K_NORMAL  1.0   // 1.0 for path tracking control (lateral gain) when mowing
+
+#define STANLEY_CONTROL_P_SLOW    3.0   // 3.0 for path tracking control (angular gain) when docking tracking
+#define STANLEY_CONTROL_K_SLOW    0.1   // 0.1 for path tracking control (lateral gain) when docking tracking
+
+
+// ----- other options --------------------------------------------
+
+// button control (turns on additional features via the POWER-ON button)
+#define BUTTON_CONTROL true      // additional features activated (press-and-hold button for specific beep count: 
+                                 //  1 beep=start/stop, 5 beeps=dock, 3 beeps=R/C mode ON/OFF)
+//#define BUTTON_CONTROL false   // additional features deactivated
+
 
 // activate support for model R/C control?
 // use PCB pin 'mow' for R/C model control speed and PCB pin 'steering' for R/C model control steering, 
@@ -334,11 +387,12 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 //#define RCMODEL_ENABLE true
 #define RCMODEL_ENABLE false
 
-// button control (turns on additional features via the POWER-ON button)
-#define BUTTON_CONTROL true      // additional features activated (press-and-hold button for specific beep count: 
-                                 //  1 beep=start/stop, 5 beeps=dock, 3 beeps=R/C mode ON/OFF)
-//#define BUTTON_CONTROL false   // additional features deactivated
 
+// ------ experimental options  -------------------------
+
+// drive curves smoothly?
+//#define SMOOTH_CURVES  true
+#define SMOOTH_CURVES  false
 
 // --------- serial monitor output (CONSOLE) ------------------------
 // which Arduino Due USB port do you want to your for serial monitor output (CONSOLE)?
@@ -497,4 +551,3 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // 2. Locate file 'packages/arduino/hardware/sam/xxxxx/cores/arduino/RingBuffer.h
   
 #define SERIAL_BUFFER_SIZE 1024
-

@@ -1,4 +1,4 @@
-// Ardumower Sunray 
+// Ardumower Sunray
 // Copyright (c) 2013-2020 by Alexander Grau, Grau GmbH
 // Licensed GPLv3 for open source use
 // or Grau GmbH Commercial License for commercial use (http://grauonline.de/cms2/?page_id=153)
@@ -18,9 +18,9 @@
 // Conversion from uS to distance (round result to nearest cm or inch).
 #define NewPingConvert(echoTime, conversionFactor) (max(((unsigned int)echoTime + conversionFactor / 2) / conversionFactor, (echoTime ? 1 : 0)))
 
-RunningMedian<unsigned int,9> sonarLeftMeasurements;
-RunningMedian<unsigned int,9> sonarRightMeasurements;
-RunningMedian<unsigned int,9> sonarCenterMeasurements;
+RunningMedian<unsigned int, 9> sonarLeftMeasurements;
+RunningMedian<unsigned int, 9> sonarRightMeasurements;
+RunningMedian<unsigned int, 9> sonarCenterMeasurements;
 
 volatile unsigned long startTime = 0;
 volatile unsigned long echoTime = 0;
@@ -33,7 +33,7 @@ unsigned long nextEvalTime = 0;
 
 
 // HC-SR04 ultrasonic sensor driver (2cm - 400cm)
-void startHCSR04(int triggerPin, int echoPin){
+void startHCSR04(int triggerPin, int echoPin) {
   unsigned int uS;
   digitalWrite(triggerPin, HIGH);
   delayMicroseconds(10);
@@ -156,4 +156,3 @@ unsigned int Sonar::convertCm(unsigned int echoTime) {
   return NewPingConvert(echoTime, US_ROUNDTRIP_CM); // Convert uS to centimeters.
 #endif
 }
-

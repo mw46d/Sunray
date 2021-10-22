@@ -99,6 +99,8 @@ float stateDeltaIMU = 0;
 float stateGroundSpeed = 0; // m/s
 float stateTemp = 0; // degreeC
 float stateHumidity = 0; // percent
+bool stateInMotionLP = false; // robot is in angular or linear motion? (with motion low-pass filtering)
+unsigned long stateInMotionLastTime = 0;
 float setSpeed = 0.1; // linear speed (m/s)
 unsigned long stateLeftTicks = 0;
 unsigned long stateRightTicks = 0;
@@ -122,6 +124,9 @@ float pitchChange = 0;
 float lastGPSMotionX = 0;
 float lastGPSMotionY = 0;
 unsigned long nextGPSMotionCheckTime = 0;
+bool lastMapRoutingFailed = false;
+int mapRoutingFailedCounter = 0;
+unsigned long retryOperationTime = 0;
 
 SolType lastSolution = SOL_INVALID;    
 unsigned long nextStatTime = 0;
@@ -152,7 +157,10 @@ float lastPosN = 0;
 float lastPosE = 0;
 
 unsigned long linearMotionStartTime = 0;
+unsigned long angularMotionStartTime = 0;
+unsigned long overallMotionTimeout = 0;
 unsigned long driveReverseStopTime = 0;
+unsigned long driveForwardStopTime = 0;
 unsigned long nextControlTime = 0;
 unsigned long lastComputeTime = 0;
 
@@ -175,9 +183,21 @@ PubSubClient mqttClient(espClient);
 
 float dockSignal = 0;
 float dockAngularSpeed = 0.1;
-bool dockingInitiatedByOperator = true;
+bool dockingInitiatedByOperator = false;
 bool gpsJump = false;
 int motorErrorCounter = 0;
+float trackerDiffDelta = 0;
+float stateDeltaLast = 0;
+float stateDeltaSpeed = 0;
+float stateDeltaSpeedLP = 0;
+float stateDeltaSpeedIMU = 0;
+float stateDeltaSpeedWheels = 0;
+float diffIMUWheelYawSpeed = 0;
+float diffIMUWheelYawSpeedLP = 0;
+bool dockReasonRainTriggered = false;
+
+unsigned long recoverGpsTime = 0;
+int recoverGpsCounter = 0;
 
 RunningMedian<unsigned int,3> tofMeasurements;
 
@@ -186,13 +206,23 @@ RunningMedian<unsigned int,3> tofMeasurements;
 void watchdogSetup (void){} 
 
 
-// reset motion measurement
+// reset linear motion measurement
 void resetLinearMotionMeasurement(){
   linearMotionStartTime = millis();  
   //stateGroundSpeed = 1.0;
 }
 
-void resetGPSMotionMeasurement(){
+// reset angular motion measurement
+void resetAngularMotionMeasurement(){
+  angularMotionStartTime = millis();
+}
+
+// reset overall motion timeout
+void resetOverallMotionTimeout(){
+  overallMotionTimeout = millis() + 10000;      
+}
+
+void updateGPSMotionCheckTime(){
   nextGPSMotionCheckTime = millis() + GPS_MOTION_DETECTION_TIMEOUT * 1000;     
 }
 
@@ -912,7 +942,7 @@ void computeRobotState(){
         if (motor.linearSpeedSet < 0) stateDeltaGPS = scalePI(stateDeltaGPS + PI); // consider if driving reverse
         //stateDeltaGPS = scalePI(2*PI-gps.heading+PI/2);
         float diffDelta = distancePI(stateDelta, stateDeltaGPS);                 
-        if (    (gps.solution == SOL_FIXED)
+        if (    ((gps.solution == SOL_FIXED) && (maps.useGPSfixForDeltaEstimation ))
              || ((gps.solution == SOL_FLOAT) && (maps.useGPSfloatForDeltaEstimation)) )
         {   // allows planner to use float solution?         
           if (fabs(diffDelta/PI*180) > 45){ // IMU-based heading too far away => use GPS heading
@@ -931,8 +961,10 @@ void computeRobotState(){
     if (gps.solution == SOL_FIXED) {
       // fix
       lastFixTime = millis();
-      stateX = posE;
-      stateY = posN;        
+      if (maps.useGPSfixForPosEstimation) {
+        stateX = posE;
+        stateY = posN;
+      }        
     } else {
       // float
       if (maps.useGPSfloatForPosEstimation){ // allows planner to use float solution?
@@ -949,26 +981,70 @@ void computeRobotState(){
   
   if ((imuFound) && (maps.useIMU)) {
     // IMU available and should be used by planner
-    stateDelta = scalePI(stateDelta + stateDeltaIMU );      
+    stateDelta = scalePI(stateDelta + stateDeltaIMU );          
   } else {
     // odometry
     stateDelta = scalePI(stateDelta + deltaOdometry);  
   }
+  if (imuFound){
+    stateDeltaSpeedIMU = 0.99 * stateDeltaSpeedIMU + 0.01 * stateDeltaIMU / 0.02; // IMU yaw rotation speed (20ms timestep)
+  }
+  stateDeltaSpeedWheels = 0.99 * stateDeltaSpeedWheels + 0.01 * deltaOdometry / 0.02; // wheels yaw rotation speed (20ms timestep) 
   //CONSOLE.println(stateDelta / PI * 180.0);
   stateDeltaIMU = 0;
-}
 
+  // compute yaw rotation speed (delta speed)
+  stateDeltaSpeed = (stateDelta - stateDeltaLast) / 0.02;  // 20ms timestep
+  stateDeltaSpeedLP = stateDeltaSpeedLP * 0.95 + fabs(stateDeltaSpeed) * 0.05;     
+  stateDeltaLast = stateDelta;
+  //CONSOLE.println(stateDeltaSpeedLP/PI*180.0);
+
+  if (imuFound) {
+    // compute difference between IMU yaw rotation speed and wheels yaw rotation speed
+    diffIMUWheelYawSpeed = stateDeltaSpeedIMU - stateDeltaSpeedWheels;
+    diffIMUWheelYawSpeedLP = diffIMUWheelYawSpeedLP * 0.95 + fabs(diffIMUWheelYawSpeed) * 0.05;  
+    //CONSOLE.println(diffIMUWheelYawSpeedLP/PI*180.0);
+    //CONSOLE.print(stateDeltaSpeedIMU/PI*180.0);
+    //CONSOLE.print(",");
+    //CONSOLE.println(stateDeltaSpeedWheels/PI*180.0);
+  }
+}
 
 // should robot move?
 bool robotShouldMove(){
-  return ( (fabs(motor.linearSpeedSet) > 0.001) ||  (fabs(motor.angularSpeedSet) > 0.001) );
+  /*CONSOLE.print(motor.linearSpeedSet);
+  CONSOLE.print(",");
+  CONSOLE.println(motor.angularSpeedSet / PI * 180.0);  */
+  return ( fabs(motor.linearSpeedSet) > 0.001 );
+}
+
+bool robotShouldMoveForward(){
+   return ( motor.linearSpeedSet > 0.001 );
+}
+
+// should robot rotate?
+bool robotShouldRotate(){
+  return ( (fabs(motor.linearSpeedSet) < 0.001) &&  (fabs(motor.angularSpeedSet) > 0.001) );
+}
+
+// should robot be in motion? NOTE: function ignores very short motion pauses (with motion low-pass filtering)
+bool robotShouldBeInMotion(){  
+  if (robotShouldMove() || (robotShouldRotate())) {
+    stateInMotionLastTime = millis();
+    stateInMotionLP = true;    
+  }
+  if (millis() > stateInMotionLastTime + 2000) {
+    stateInMotionLP = false;
+  }
+  return stateInMotionLP;
 }
 
 
+// drive reverse if robot cannot move forward
 void triggerObstacle(){
   CONSOLE.println("triggerObstacle");    
   statMowObstacles++;    
-  if ((OSTACLE_AVOIDANCE) && (maps.wayMode != WAY_DOCK)){    
+  if ((OBSTACLE_AVOIDANCE) && (maps.wayMode != WAY_DOCK)){    
     driveReverseStopTime = millis() + 3000;      
   } else { 
     stateSensor = SENS_OBSTACLE;
@@ -1002,11 +1078,13 @@ void detectSensorMalfunction(){
     if (motor.motorError){
       // this is the molehole situation: motor error will permanently trigger on molehole => we try obstacle avoidance (molehole avoidance strategy)
       motor.motorError = false; // reset motor error flag
-      motorErrorCounter++; 
-      if (motorErrorCounter < 5){ 
-        //stateSensor = SENS_MOTOR_ERROR;
-        triggerObstacle();     // trigger obstacle avoidance 
-        return;
+      motorErrorCounter++;       
+      if (maps.wayMode != WAY_DOCK){
+        if (motorErrorCounter < 5){ 
+          //stateSensor = SENS_MOTOR_ERROR;
+          triggerObstacle();     // trigger obstacle avoidance 
+          return;
+        }
       }
       // obstacle avoidance failed with too many motor errors (it was probably not a molehole situation)
       CONSOLE.println("motor error!");
@@ -1019,9 +1097,10 @@ void detectSensorMalfunction(){
 }
 
 
-// detect obstacle (bumper, sonar, ToF) 
-void detectObstacle(){  
-  if (!robotShouldMove()) return;  
+// detect obstacle (bumper, sonar, ToF)
+// returns true, if obstacle detected, otherwise false
+bool detectObstacle(){  
+  if (! ((robotShouldMoveForward()) || (robotShouldRotate())) ) return false;      
   if (TOF_ENABLE){
     if (millis() >= nextToFTime){
       nextToFTime = millis() + 200;
@@ -1034,7 +1113,7 @@ void detectObstacle(){
           if (avg < TOF_OBSTACLE_CM * 10){
             CONSOLE.println("ToF obstacle!");    
             triggerObstacle();                
-            return; 
+            return true; 
           }
         }      
       } 
@@ -1046,7 +1125,7 @@ void detectObstacle(){
       CONSOLE.println("bumper obstacle!");    
       statMowBumperCounter++;
       triggerObstacle();    
-      return;
+      return true;
     }
   }
   if (sonar.obstacle() && (maps.wayMode != WAY_DOCK)){
@@ -1054,12 +1133,14 @@ void detectObstacle(){
     statMowSonarCounter++;
     if (SONAR_TRIGGER_OBSTACLES){
       triggerObstacle();
-      return;
+      return true;
     }        
   }  
   // check if GPS motion (obstacle detection)  
-  if (millis() > nextGPSMotionCheckTime){        
-    resetGPSMotionMeasurement();
+  if ((millis() > nextGPSMotionCheckTime) || (millis() > overallMotionTimeout)) {        
+    updateGPSMotionCheckTime();
+    resetOverallMotionTimeout(); // this resets overall motion timeout (overall motion timeout happens if e.g. 
+    // motion between anuglar-only and linar-only toggles quickly, and their specific timeouts cannot apply due to the quick toggling)
     float dX = lastGPSMotionX - stateX;
     float dY = lastGPSMotionY - stateY;
     float delta = sqrt( sq(dX) + sq(dY) );    
@@ -1068,14 +1149,67 @@ void detectObstacle(){
         CONSOLE.println("gps no motion => obstacle!");
         statMowGPSMotionTimeoutCounter++;
         triggerObstacle();
-        return;
+        return true;
       }
     }
     lastGPSMotionX = stateX;      
     lastGPSMotionY = stateY;      
   }    
+  return false;
 }
 
+// stuck rotate avoidance (drive forward if robot cannot rotate)
+void triggerObstacleRotation(){
+  CONSOLE.println("triggerObstacleRotation");    
+  statMowObstacles++;   
+  if ((OBSTACLE_AVOIDANCE) && (maps.wayMode != WAY_DOCK)){    
+    if (FREEWHEEL_IS_AT_BACKSIDE){    
+      driveForwardStopTime = millis() + 2000;      
+    } else {
+      driveReverseStopTime = millis() + 3000;
+    }
+  } else { 
+    stateSensor = SENS_OBSTACLE;
+    setOperation(OP_ERROR);
+    buzzer.sound(SND_ERROR, true);        
+  }
+}
+
+// stuck rotate detection (e.g. robot cannot due to an obstacle outside of robot rotation point)
+// returns true, if stuck detected, otherwise false
+bool detectObstacleRotation(){  
+  if (!robotShouldRotate()) {
+    return false;
+  }  
+  if (!OBSTACLE_DETECTION_ROTATION) return false; 
+  if (millis() > angularMotionStartTime + 15000) { // too long rotation time (timeout), e.g. due to obstacle
+    triggerObstacleRotation();
+    return true;
+  }
+  /*if (BUMPER_ENABLE){
+    if (millis() > angularMotionStartTime + 500) { // FIXME: do we actually need a deadtime here for the freewheel sensor?        
+      if (bumper.obstacle()){  
+        CONSOLE.println("bumper obstacle!");    
+        statMowBumperCounter++;
+        triggerObstacleRotation();    
+        return true;
+      }
+    }
+  }*/
+  if (imuFound){
+    if (millis() > angularMotionStartTime + 3000) {                  
+      if (fabs(stateDeltaSpeedLP) < 3.0/180.0 * PI){ // less than 3 degree/s yaw speed, e.g. due to obstacle
+        triggerObstacleRotation();
+        return true;      
+      }
+    }
+    if (diffIMUWheelYawSpeedLP > 10.0/180.0 * PI) {  // yaw speed difference between wheels and IMU more than 8 degree/s, e.g. due to obstacle
+      triggerObstacleRotation();
+      return true;            
+    }    
+  }
+  return false;
+}
 
 // control robot velocity (linear,angular) to track line to next waypoint (target)
 // uses a stanley controller for line tracking
@@ -1090,7 +1224,7 @@ void trackLine(){
   float targetDelta = pointsAngle(stateX, stateY, target.x(), target.y());      
   if (maps.trackReverse) targetDelta = scalePI(targetDelta + PI);
   targetDelta = scalePIangles(targetDelta, stateDelta);
-  float diffDelta = distancePI(stateDelta, targetDelta);                         
+  trackerDiffDelta = distancePI(stateDelta, targetDelta);                         
   float lateralError = distanceLineInfinite(stateX, stateY, lastTarget.x(), lastTarget.y(), target.x(), target.y());        
   float distToPath = distanceLine(stateX, stateY, lastTarget.x(), lastTarget.y(), target.x(), target.y());        
   float targetDist = maps.distanceToTargetPoint(stateX, stateY);
@@ -1105,42 +1239,32 @@ void trackLine(){
   if ( (motor.motorLeftOverload) || (motor.motorRightOverload) || (motor.motorMowOverload) ){
     linear = 0.1;  
   }   
-  
-  if (KIDNAP_DETECT){
-    if (fabs(distToPath) > 1.0){ // actually, this should not happen (except something strange is going on...)
-      CONSOLE.println("kidnapped!");
-      stateSensor = SENS_KIDNAPPED;
-      setOperation(OP_ERROR);
-      buzzer.sound(SND_ERROR, true);        
-      return;
-   }
-  }
           
   // allow rotations only near last or next waypoint or if too far away from path
   if ( (targetDist < 0.5) || (lastTargetDist < 0.5) ||  (fabs(distToPath) > 0.5) ) {
     if (SMOOTH_CURVES)
-      angleToTargetFits = (fabs(diffDelta)/PI*180.0 < 120);          
+      angleToTargetFits = (fabs(trackerDiffDelta)/PI*180.0 < 120);          
     else     
-      angleToTargetFits = (fabs(diffDelta)/PI*180.0 < 20);   
+      angleToTargetFits = (fabs(trackerDiffDelta)/PI*180.0 < 20);   
   } else angleToTargetFits = true;
 
                
   if (!angleToTargetFits){
     // angular control (if angle to far away, rotate to next waypoint)
     linear = 0;
-    angular = 0.5;               
+    angular = 29.0 / 180.0 * PI; //  29 degree/s (0.5 rad/s);               
     if ((!rotateLeft) && (!rotateRight)){ // decide for one rotation direction (and keep it)
-      if (diffDelta < 0) rotateLeft = true;
+      if (trackerDiffDelta < 0) rotateLeft = true;
         else rotateRight = true;
     }        
     if (rotateLeft) angular *= -1;            
-    if (fabs(diffDelta)/PI*180.0 < 90){
+    if (fabs(trackerDiffDelta)/PI*180.0 < 90){
       rotateLeft = false;  // reset rotate direction
       rotateRight = false;
-    }
+    }    
   } 
   else {
-    // line control (stanley)
+    // line control (stanley)    
     bool straight = maps.nextPointIsStraight();
     if (maps.trackSlow) {
       // planner forces slow tracking (e.g. docking etc)
@@ -1158,10 +1282,14 @@ void trackLine(){
         linear = setSpeed;         // desired speed
       if (sonar.nearObstacle()) linear = 0.1; // slow down near obstacles
     }      
-    //angular = 3.0 * diffDelta + 3.0 * lateralError;       // correct for path errors 
+    //angula                                    r = 3.0 * trackerDiffDelta + 3.0 * lateralError;       // correct for path errors 
     float k = STANLEY_CONTROL_K_NORMAL;
-    if (maps.trackSlow) k = STANLEY_CONTROL_K_SLOW;   
-    angular = diffDelta + atan2(k * lateralError, (0.001 + fabs(motor.linearSpeedSet)));       // correct for path errors           
+    float p = STANLEY_CONTROL_P_NORMAL;    
+    if (maps.trackSlow) {
+      k = STANLEY_CONTROL_K_SLOW;   
+      p = STANLEY_CONTROL_P_SLOW;          
+    }
+    angular =  p * trackerDiffDelta + atan2(k * lateralError, (0.001 + fabs(motor.linearSpeedSet)));       // correct for path errors           
     /*pidLine.w = 0;              
     pidLine.x = lateralError;
     pidLine.max_output = PI;
@@ -1175,24 +1303,28 @@ void trackLine(){
     if (maps.trackReverse) linear *= -1;   // reverse line tracking needs negative speed
     if (!SMOOTH_CURVES) angular = max(-PI/16, min(PI/16, angular)); // restrict steering angle for stanley
   }
-  if (fixTimeout != 0){
-    if (millis() > lastFixTime + fixTimeout * 1000.0){
-      // stop on fix solution timeout (fixme: optionally: turn on place if fix-timeout)
-      linear = 0;
-      angular = 0;
-      mow = false; 
-      stateSensor = SENS_GPS_FIX_TIMEOUT;
-      //angular = 0.2;
-    } else {
-      //if (stateSensor == SENS_GPS_FIX_TIMEOUT) stateSensor = SENS_NONE; // clear fix timeout
-    }       
-  }     
-  
+  // check some pre-conditions that can make linear+angular speed zero
+  if (!maps.isUndocking()){
+    if (fixTimeout != 0){
+      if (millis() > lastFixTime + fixTimeout * 1000.0){
+        // stop on fix solution timeout 
+        linear = 0;
+        angular = 0;
+        mow = false; 
+        stateSensor = SENS_GPS_FIX_TIMEOUT;
+        //angular = 0.2;
+      } else {
+        //if (stateSensor == SENS_GPS_FIX_TIMEOUT) stateSensor = SENS_NONE; // clear fix timeout
+      }       
+    }     
+  }
+
   if ((gps.solution == SOL_FIXED) || (gps.solution == SOL_FLOAT)){        
     if (linear > 0.06) {
       if ((millis() > linearMotionStartTime + 5000) && (stateGroundSpeed < 0.03)){
         // if in linear motion and not enough ground speed => obstacle
-        if (GPS_SPEED_DETECTION){
+        //if ( (GPS_SPEED_DETECTION) && (!maps.isUndocking()) ) { 
+        if (GPS_SPEED_DETECTION) {         
           CONSOLE.println("gps no speed => obstacle!");
           triggerObstacle();
           return;
@@ -1213,6 +1345,34 @@ void trackLine(){
       } 
     }
   }
+
+  // gps-jump/false fix check
+  if (KIDNAP_DETECT){
+    float allowedPathTolerance = KIDNAP_DETECT_ALLOWED_PATH_TOLERANCE;     
+    if ( maps.isUndocking() ) allowedPathTolerance = 0.2;
+    if (fabs(distToPath) > allowedPathTolerance){ // actually, this should not happen (except on false GPS fixes or robot being kidnapped...)
+      linear = 0;
+      angular = 0;        
+      mow = false;
+      stateSensor = SENS_KIDNAPPED;
+      if (millis() > recoverGpsTime){
+        CONSOLE.println("KIDNAP_DETECT");
+        recoverGpsTime = millis() + 30000;
+        recoverGpsCounter++;
+        if (recoverGpsCounter == 3){          
+          setOperation(OP_ERROR);
+          buzzer.sound(SND_ERROR, true);        
+          return;
+        }   
+        if (GPS_REBOOT_RECOVERY){           
+          gps.reboot();   // try to recover from false GPS fix     
+        }
+      }      
+    } else {
+      recoverGpsTime = millis() + 30000;
+      recoverGpsCounter = 0;
+    }
+  }
    
   if (mow)  {  // wait until mowing motor is running
     if (millis() < motor.motorMowSpinUpTime + 5000){
@@ -1222,13 +1382,9 @@ void trackLine(){
     }
   }
 
-  if (abs(linear) < 0.01){
-    resetLinearMotionMeasurement();
-  }
-
   motor.setLinearAngularSpeed(linear, angular);      
   motor.setMowState(mow);
-   
+
   if (targetReached){
     if (maps.wayMode == WAY_MOW){
       maps.clearObstacles(); // clear obstacles if target reached
@@ -1335,14 +1491,35 @@ void run(){
     controlLoops++;    
     
     computeRobotState();
+    if (!robotShouldMove()){
+      resetLinearMotionMeasurement();
+      updateGPSMotionCheckTime();  
+    }
+    if (!robotShouldRotate()){
+      resetAngularMotionMeasurement();
+    }
+    if (!robotShouldBeInMotion()){
+      resetOverallMotionTimeout();
+      lastGPSMotionX = 0;
+      lastGPSMotionY = 0;
+    }
 
-    if (gpsJump){
-      // gps jump: restart current operation from new position
-      CONSOLE.println("restarting due to gps jump");
+    /*if (gpsJump) {
+      // gps jump: restart current operation from new position (restart path planning)
+      CONSOLE.println("restarting operation (gps jump)");
       gpsJump = false;
       motor.stopImmediately(true);
       setOperation(stateOp, true);    // restart current operation
-    }  
+    }*/
+    if (retryOperationTime != 0) {
+      if (millis() > retryOperationTime){
+        // restart current operation from new position (restart path planning)
+        CONSOLE.println("restarting operation (retryOperationTime)");
+        retryOperationTime = 0;
+        motor.stopImmediately(true);
+        setOperation(stateOp, true);    // restart current operation
+      }
+    }
 
     if (!imuIsCalibrating){     
       
@@ -1356,7 +1533,14 @@ void run(){
       if (battery.chargerConnected()){
         if ((stateOp == OP_IDLE) || (stateOp == OP_CHARGE)){
           maps.setIsDocked(true);               
-          maps.setRobotStatePosToDockingPos(stateX, stateY, stateDelta);                       
+          // get robot position and yaw from map
+          // sensing charging contacts means we are in docking station - we use docking point coordinates to get rid of false fix positions in
+          // docking station
+          maps.setRobotStatePosToDockingPos(stateX, stateY, stateDelta);
+          // get robot yaw orientation from map 
+          //float tempX;
+          //float tempY;
+          //maps.setRobotStatePosToDockingPos(tempX, tempY, stateDelta);                       
         }
         battery.resetIdle();        
       } else {
@@ -1367,24 +1551,42 @@ void run(){
       
       
       if ((stateOp == OP_MOW) ||  (stateOp == OP_DOCK)) {              
-        if (driveReverseStopTime > 0){
-          // obstacle avoidance
-          motor.setLinearAngularSpeed(-0.1,0);
-          if (millis() > driveReverseStopTime){
-            CONSOLE.println("driveReverseStopTime");
-            motor.stopImmediately(false);
-            driveReverseStopTime = 0;
-            maps.addObstacle(stateX, stateY);
-            Point pt;
-            if (!maps.findObstacleSafeMowPoint(pt)){
-              setOperation(OP_DOCK, true); // dock if no more (valid) mowing points
-            } else setOperation(stateOp, true);    // continue current operation
-          }
-        } else {          
-          // line tracking
-          trackLine();
-          detectSensorMalfunction();
-          detectObstacle();       
+        
+        if (retryOperationTime == 0){ // if path planning was successful 
+          if (driveReverseStopTime > 0){
+            // obstacle avoidance
+            motor.setLinearAngularSpeed(-0.1,0);            
+            if (millis() > driveReverseStopTime){
+              CONSOLE.println("driveReverseStopTime");
+              motor.stopImmediately(false);
+              driveReverseStopTime = 0;
+              maps.addObstacle(stateX, stateY);
+              Point pt;
+              if (!maps.findObstacleSafeMowPoint(pt)){
+                setOperation(OP_DOCK, true); // dock if no more (valid) mowing points
+              } else setOperation(stateOp, true);    // continue current operation
+            }            
+          } else if (driveForwardStopTime > 0){
+            // rotate stuck avoidance
+            motor.setLinearAngularSpeed(0.1,0);            
+            if (millis() > driveForwardStopTime){
+              CONSOLE.println("driveForwardStopTime");
+              motor.stopImmediately(false);
+              driveForwardStopTime = 0;
+              /*maps.addObstacle(stateX, stateY);
+              Point pt;
+              if (!maps.findObstacleSafeMowPoint(pt)){
+                setOperation(OP_DOCK, true); // dock if no more (valid) mowing points
+              } else*/ setOperation(stateOp, true);    // continue current operation              
+            }            
+          } else {          
+            // line tracking
+            trackLine();
+            detectSensorMalfunction();
+            if (!detectObstacle()){
+              detectObstacleRotation();
+            }                   
+          }        
         }        
         battery.resetIdle();
         if (battery.underVoltage()){
@@ -1401,7 +1603,8 @@ void run(){
           if (rainDriver.triggered()){
             if (DOCKING_STATION){
               stateSensor = SENS_RAIN;
-              setOperation(OP_DOCK);
+              dockReasonRainTriggered = true;
+              setOperation(OP_DOCK);              
             }
           }
         }        
@@ -1411,7 +1614,7 @@ void run(){
           if (battery.chargingHasCompleted()){
             if ((DOCKING_STATION) && (!dockingInitiatedByOperator)) {
               if (maps.mowPointsIdx > 0){  // if mowing not completed yet
-                if (DOCK_AUTO_START) { // automatic continue mowing allowed?
+                if ((DOCK_AUTO_START) && (!dockReasonRainTriggered)) { // automatic continue mowing allowed?
                   setOperation(OP_MOW); // continue mowing
                 }
               }
@@ -1478,23 +1681,25 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
   CONSOLE.print("setOperation op=");
   CONSOLE.print(op);
   bool error = false;
+  bool routingFailed = false;    
   switch (op){
     case OP_IDLE:
-      CONSOLE.println(" OP_IDLE");
-      dockingInitiatedByOperator = true;
+      CONSOLE.println(" OP_IDLE");      
       motor.setLinearAngularSpeed(0,0);
       motor.setMowState(false);
       break;
     case OP_DOCK:
       CONSOLE.println(" OP_DOCK");
-      if (initiatedbyOperator) maps.clearObstacles();
-      dockingInitiatedByOperator = initiatedbyOperator;      
       motor.setLinearAngularSpeed(0,0);
       motor.setMowState(false);                
+      if ((initiatedbyOperator) || (lastMapRoutingFailed))  maps.clearObstacles();
+      if (initiatedbyOperator) {
+        dockingInitiatedByOperator = true;            
+        dockReasonRainTriggered = false;
+      }
       if (maps.startDocking(stateX, stateY)){       
         if (maps.nextPoint(true)) {
           maps.repeatLastMowingPoint();
-          resetGPSMotionMeasurement;
           lastFixTime = millis();                
           maps.setLastTargetPoint(stateX, stateY);        
           //stateSensor = SENS_NONE;                  
@@ -1506,17 +1711,19 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
       } else error = true;
       if (error){
         stateSensor = SENS_MAP_NO_ROUTE;
-        op = OP_ERROR;
+        //op = OP_ERROR;
+        routingFailed = true;        
         motor.setMowState(false);
       }
       break;
     case OP_MOW:      
       CONSOLE.println(" OP_MOW");      
-      if (initiatedbyOperator) maps.clearObstacles();
-      motor.setLinearAngularSpeed(0,0);
+      motor.setLinearAngularSpeed(0,0);      
+      dockingInitiatedByOperator = false;
+      dockReasonRainTriggered = false;
+      if ((initiatedbyOperator) || (lastMapRoutingFailed)) maps.clearObstacles();
       if (maps.startMowing(stateX, stateY)){
         if (maps.nextPoint(true)) {
-          resetGPSMotionMeasurement();
           lastFixTime = millis();                
           maps.setLastTargetPoint(stateX, stateY);        
           //stateSensor = SENS_NONE;
@@ -1529,7 +1736,8 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
       } else error = true;
       if (error){
         stateSensor = SENS_MAP_NO_ROUTE;
-        op = OP_ERROR;
+        //op = OP_ERROR;
+        routingFailed = true;
         motor.setMowState(false);
       }
       break;
@@ -1544,6 +1752,29 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
       motor.setMowState(false);      
       break;
   }
+
+  if (routingFailed){
+    // map routing failed (e.g. due to invalid GPS etc.), try another map routing after some seconds
+    lastMapRoutingFailed = true;
+    mapRoutingFailedCounter++;    
+    if (mapRoutingFailedCounter > 60){
+      op = OP_ERROR;  // too many map routing tries after 10 minutes
+      retryOperationTime = 0;
+    } else {
+      retryOperationTime = millis() + 10000; // try another map routing after 10 seconds
+      if (mapRoutingFailedCounter == 30){
+        // try GPS reboot after 5 minutes
+        if (GPS_REBOOT_RECOVERY){
+          gps.reboot();  // try to recover from false GPS fix
+        }
+        retryOperationTime = millis() + 30000; // wait 30 secs after reboot, then try another map routing
+      }     
+    }
+  } else { 
+    lastMapRoutingFailed = false;
+    mapRoutingFailedCounter = 0;
+    retryOperationTime = 0;
+  }  
   stateOp = op;  
   saveState();
 }
