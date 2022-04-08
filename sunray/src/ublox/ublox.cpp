@@ -178,7 +178,7 @@ bool UBLOX::configure(){
       } 
       else if (idx == 2){
         // ----- USB messages (Ardumower) -----------------  
-        setValueSuccess &= configGPS.newCfgValset8(0x20910009, 0, VAL_LAYER_RAM); // CFG-MSGOUT-UBX_NAV_PVT_USB    (off)        
+        setValueSuccess &= configGPS.newCfgValset8(0x20910009, 10, VAL_LAYER_RAM); // CFG-MSGOUT-UBX_NAV_PVT_USB  (every 10 solutions)
         setValueSuccess &= configGPS.addCfgValset8(0x20910090, 1); // CFG-MSGOUT-UBX_NAV_RELPOSNED_USB  (every solution)
         setValueSuccess &= configGPS.addCfgValset8(0x20910036, 1); // CFG-MSGOUT-UBX_NAV_HPPOSLLH_USB   (every solution)
         setValueSuccess &= configGPS.addCfgValset8(0x20910045, 1); // CFG-MSGOUT-UBX_NAV_VELNED_USB     (every solution)
@@ -186,7 +186,7 @@ bool UBLOX::configure(){
         setValueSuccess &= configGPS.addCfgValset8(0x20910348, 20); // CFG-MSGOUT-UBX_NAV_SIG_USB   (every 20 solutions)   
 
         // ----- uart1 messages (Ardumower) -----------------  
-        setValueSuccess &= configGPS.addCfgValset8(0x20910007, 0); // CFG-MSGOUT-UBX_NAV_PVT_UART1   (off)
+        setValueSuccess &= configGPS.addCfgValset8(0x20910007, 10); // CFG-MSGOUT-UBX_NAV_PVT_UART1   (every 10 solutions)
         setValueSuccess &= configGPS.addCfgValset8(0x2091008e, 1); // CFG-MSGOUT-UBX_NAV_RELPOSNED_UART1  (every solution)
         setValueSuccess &= configGPS.addCfgValset8(0x20910034, 1); // CFG-MSGOUT-UBX_NAV_HPPOSLLH_UART1   (every solution)
         setValueSuccess &= configGPS.addCfgValset8(0x20910043, 1); // CFG-MSGOUT-UBX_NAV_VELNED_UART1     (every solution)
