@@ -4,6 +4,8 @@
 #include "reset.h"
 #ifdef __linux__
   #include <BridgeClient.h>
+  #include <Process.h>
+  #include <WiFi.h>
 #else
   #include "src/esp/WiFiEsp.h"
 #endif
@@ -52,6 +54,47 @@ void cmdAnswer(String s){
   cmdResponse = s;
 }
 
+// request tune param
+void cmdTuneParam(){
+  if (cmd.length()<6) return;  
+  int counter = 0;
+  int paramIdx = -1;
+  int lastCommaIdx = 0;
+  for (int idx=0; idx < cmd.length(); idx++){
+    char ch = cmd[idx];
+    //Serial.print("ch=");
+    //Serial.println(ch);
+    if ((ch == ',') || (idx == cmd.length()-1)){
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();
+      if (counter == 1){                            
+          paramIdx = floatValue;
+      } else if (counter == 2){                                      
+          CONSOLE.print("tuneParam ");
+          CONSOLE.print(paramIdx);
+          CONSOLE.print("=");
+          CONSOLE.println(floatValue);    
+          switch (paramIdx){
+            case 0: 
+              stanleyTrackingNormalP = floatValue;
+              break;
+            case 1:
+              stanleyTrackingNormalK = floatValue;
+              break;
+            case 2:
+              stanleyTrackingSlowP = floatValue;
+              break;
+            case 3: 
+              stanleyTrackingSlowK = floatValue;
+              break;
+          } 
+      } 
+      counter++;
+      lastCommaIdx = idx;
+    }    
+  }      
+  String s = F("CT");
+  cmdAnswer(s);
+}
 
 // request operation
 void cmdControl(){
@@ -66,9 +109,9 @@ void cmdControl(){
     //Serial.print("ch=");
     //Serial.println(ch);
     if ((ch == ',') || (idx == cmd.length()-1)){
-      int intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      float floatValue = cmd.substring(lastCommaIdx+1, idx+1).toFloat();
-      if (counter == 1){
+      int intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();
+      if (counter == 1){                            
           if (intValue >= 0) {
             motor.enableMowMotor = (intValue == 1);
             motor.setMowState( (intValue == 1) );
@@ -113,8 +156,8 @@ void cmdMotor(){
     //Serial.print("ch=");
     //Serial.println(ch);
     if ((ch == ',') || (idx == cmd.length()-1)){
-      float value = cmd.substring(lastCommaIdx+1, idx+1).toFloat();
-      if (counter == 1){
+      float value = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();
+      if (counter == 1){                            
           linear = value;
       } else if (counter == 2){
           angular = value;
@@ -164,10 +207,10 @@ void cmdWaypoint(){
     char ch = cmd[idx];
     //Serial.print("ch=");
     //Serial.println(ch);
-    if ((ch == ',') || (idx == cmd.length()-1)){
-      float intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      float floatValue = cmd.substring(lastCommaIdx+1, idx+1).toFloat();
-      if (counter == 1){
+    if ((ch == ',') || (idx == cmd.length()-1)){            
+      float intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();
+      if (counter == 1){                            
           widx = intValue;
       } else if (counter == 2){
           x = floatValue;
@@ -213,11 +256,11 @@ void cmdWayCount(){
     char ch = cmd[idx];
     //Serial.print("ch=");
     //Serial.println(ch);
-    if ((ch == ',') || (idx == cmd.length()-1)){
-      float intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      float floatValue = cmd.substring(lastCommaIdx+1, idx+1).toFloat();
-      if (counter == 1){
-          if (!maps.setWayCount(WAY_PERIMETER, intValue)) return;
+    if ((ch == ',') || (idx == cmd.length()-1)){            
+      float intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();      
+      if (counter == 1){                            
+          if (!maps.setWayCount(WAY_PERIMETER, intValue)) return;                
       } else if (counter == 2){
           if (!maps.setWayCount(WAY_EXCLUSION, intValue)) return;                
       } else if (counter == 3){
@@ -247,10 +290,10 @@ void cmdExclusionCount(){
     char ch = cmd[idx];
     //Serial.print("ch=");
     //Serial.println(ch);
-    if ((ch == ',') || (idx == cmd.length()-1)){
-      float intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      float floatValue = cmd.substring(lastCommaIdx+1, idx+1).toFloat();
-      if (counter == 1){
+    if ((ch == ',') || (idx == cmd.length()-1)){            
+      float intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();
+      if (counter == 1){                            
           widx = intValue;
       } else if (counter == 2){
           if (!maps.setExclusionLength(widx, intValue)) return;
@@ -277,9 +320,9 @@ void cmdPosMode(){
     //Serial.print("ch=");
     //Serial.println(ch);
     if ((ch == ',') || (idx == cmd.length()-1)){
-      int intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      double doubleValue = cmd.substring(lastCommaIdx+1, idx+1).toDouble();
-      if (counter == 1){
+      int intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();
+      double doubleValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toDouble();
+      if (counter == 1){                            
           absolutePosSource = bool(intValue);
       } else if (counter == 2){
           absolutePosSourceLon = doubleValue;
@@ -319,6 +362,8 @@ void cmdVersion(){
   s += encryptMode;
   s += F(",");
   s += encryptChallenge;
+  s += F(",");
+  s += BOARD;
   CONSOLE.print("sending encryptMode=");
   CONSOLE.print(encryptMode);
   CONSOLE.print(" encryptChallenge=");  
@@ -340,12 +385,17 @@ void cmdStressTest(){
   maps.stressTest();
 }
 
-// perform hang test (watchdog should trigger)
+// perform hang test (watchdog should trigger and restart robot)
 void cmdTriggerWatchdog(){
   String s = F("Y");
   cmdAnswer(s);
   setOperation(OP_IDLE);
-  triggerWatchdog = true;
+  #ifdef __linux__
+    Process p;
+    p.runShellCommand("reboot");    
+  #else
+    triggerWatchdog = true;  
+  #endif
 }
 
 // perform hang test (watchdog should trigger)
@@ -362,6 +412,10 @@ void cmdSwitchOffRobot(){
   cmdAnswer(s);
   setOperation(OP_IDLE);
   battery.switchOff();
+  #ifdef __linux__
+    Process p;
+    p.runShellCommand("shutdown now");
+  #endif
 }
 
 // kidnap test (kidnap detection should trigger)
@@ -441,7 +495,9 @@ void cmdSummary(){
   s += gps.numSVdgps;
   s += ",";
   s += maps.mapCRC;
-  cmdAnswer(s);
+  s += ",";
+  s += lateralError;
+  cmdAnswer(s);  
 }
 
 // request statistics
@@ -526,6 +582,73 @@ void cmdClearStats(){
   cmdAnswer(s);
 }
 
+// scan WiFi networks
+void cmdWiFiScan(){
+  CONSOLE.println("cmdWiFiScan");
+  String s = F("B1,");  
+  #ifdef __linux__    
+  int numNetworks = WiFi.scanNetworks();
+  CONSOLE.print("numNetworks=");
+  CONSOLE.println(numNetworks);
+  for (int i=0; i < numNetworks; i++){
+      CONSOLE.println(WiFi.SSID(i));
+      s += WiFi.SSID(i);
+      if (i < numNetworks-1) s += ",";
+  }
+  #endif  
+  cmdAnswer(s);
+}
+
+// setup WiFi
+void cmdWiFiSetup(){
+  CONSOLE.println("cmdWiFiSetup");
+  #ifdef __linux__
+    if (cmd.length()<6) return;  
+    int counter = 0;
+    int lastCommaIdx = 0;    
+    String ssid = "";
+    String pass = "";
+    for (int idx=0; idx < cmd.length(); idx++){
+      char ch = cmd[idx];
+      //Serial.print("ch=");
+      //Serial.println(ch);
+      if ((ch == ',') || (idx == cmd.length()-1)){
+        String str = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1);
+        if (counter == 1){                            
+            ssid = str;
+        } else if (counter == 2){
+            pass = str;
+        } 
+        counter++;
+        lastCommaIdx = idx;
+      }    
+    }      
+    /*CONSOLE.print("ssid=");
+    CONSOLE.print(ssid);
+    CONSOLE.print(" pass=");
+    CONSOLE.println(pass);*/
+    WiFi.begin((char*)ssid.c_str(), (char*)pass.c_str());    
+  #endif
+  String s = F("B2");
+  cmdAnswer(s);
+}
+
+// request WiFi status
+void cmdWiFiStatus(){
+  String s = F("B3,");  
+  #ifdef __linux__
+  IPAddress addr = WiFi.localIP();
+	s += addr[0];
+	s += ".";
+	s += addr[1];
+	s += ".";
+	s += addr[2];
+	s += ".";
+	s += addr[3];		
+  #endif  
+  cmdAnswer(s);
+}
+
 
 // process request
 void processCmd(bool checkCrc, bool decrypt){
@@ -584,7 +707,10 @@ void processCmd(bool checkCrc, bool decrypt){
   if (cmd[2] != '+') return;
   if (cmd[3] == 'S') cmdSummary();
   if (cmd[3] == 'M') cmdMotor();
-  if (cmd[3] == 'C') cmdControl();
+  if (cmd[3] == 'C'){ 
+    if ((cmd.length() > 4) && (cmd[4] == 'T')) cmdTuneParam();
+    else cmdControl();
+  }
   if (cmd[3] == 'W') cmdWaypoint();
   if (cmd[3] == 'N') cmdWayCount();
   if (cmd[3] == 'X') cmdExclusionCount();
@@ -596,6 +722,11 @@ void processCmd(bool checkCrc, bool decrypt){
   if (cmd[3] == 'Q') cmdMotorPlot();  
   if (cmd[3] == 'O') cmdObstacle();  
   if (cmd[3] == 'F') cmdSensorTest(); 
+  if (cmd[3] == 'B') {
+    if (cmd[4] == '1') cmdWiFiScan();
+    if (cmd[4] == '2') cmdWiFiSetup();   
+    if (cmd[4] == '3') cmdWiFiStatus();     
+  }
   if (cmd[3] == 'G') cmdToggleGPSSolution();   // for developers
   if (cmd[3] == 'K') cmdKidnap();   // for developers
   if (cmd[3] == 'Z') cmdStressTest();   // for developers
@@ -904,11 +1035,15 @@ void outputConsole(){
       CONSOLE.print (" sp=");
       CONSOLE.print (*spReg, HEX);
     #endif
-    CONSOLE.print(" volt=");
+    CONSOLE.print(" bat=");
     CONSOLE.print(battery.batteryVoltage);
-    CONSOLE.print(" chg=");
-    CONSOLE.print(battery.chargingCurrent);
-    CONSOLE.print(" tg=");
+    CONSOLE.print("(");    
+    CONSOLE.print(motor.motorsSenseLP);    
+    CONSOLE.print(") chg=");
+    CONSOLE.print(battery.chargingVoltage);    
+    CONSOLE.print("(");
+    CONSOLE.print(battery.chargingCurrent);    
+    CONSOLE.print(") tg=");
     CONSOLE.print(maps.targetPoint.x());
     CONSOLE.print(",");
     CONSOLE.print(maps.targetPoint.y());

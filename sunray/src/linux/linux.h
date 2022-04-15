@@ -1,4 +1,4 @@
-// Raspberry PI
+// Arduino Framework for Linux
 
 
 #if defined(__linux__)

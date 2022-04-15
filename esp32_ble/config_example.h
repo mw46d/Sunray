@@ -14,8 +14,8 @@
      6. Choose Port (Windows NOTE: if the port is not shown you may have to install drivers: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers)
      7. Choose "Tools->Manager Libraries..."
      8. Add library "ESP32_HTTPS_Server by Frank Hessel"  
-     9. Optional: Add library "NimBLE-Arduino by h2zero"  (requires less memory - only if activated 'USE_NIM_BLE')
-     10. Optional: Add library "ArduinoJson by Benoit Blanchon" and "MQTT (by Joel Gaehwiler)" (only if activated 'USE_MQTT')
+     9. Add library "ArduinoJson by Benoit Blanchon" and "ThingsOfValue SDK for Arduino"
+     10. Add library "NimBLE-Arduino by h2zero"  (requires less memory - only used if activated 'USE_NIM_BLE')
      11. Copy this file into 'config.h'     
      12. Configure the options below and finally compile and upload this project.
      
@@ -35,6 +35,9 @@
 
   Note: Please see and ask in the forum if you experience HTTP connection issues: 
   https://forum.ardumower.de/threads/sunray-app-connection-issue-solved-sunray-app-verbindungsproblem-gel%C3%B6st.24467/
+
+  NOTE: If your ESP32 is not available as a device, you may have to install an USB driver: 
+  https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers 
 
 */
 
@@ -68,6 +71,18 @@
 // NOTE: if using HTTPS, you also need to uncomment USE_NIM_BLE above!
 //#define USE_HTTPS  1  
 
+
+// Relay server
+//
+// Install this library with the Arduino Library Manager:
+// ArduinoWebsockets - by Gil Maimon - https://github.com/gilmaimon/ArduinoWebsockets
+//
+//#define USE_RELAY
+//#define RELAY_URL       "wss://example.relay.mow.timotto.io/mower"
+//#define RELAY_USERNAME  ""
+//#define RELAY_PASSWORD  ""
+//#define RELAY_TIMEOUT   1000
+//#define RELAY_PINGWAIT  55
 
 // MQTT server 
 // (subscribed topcis: '/command/start', '/command/stop', '/command/dock')

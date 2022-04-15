@@ -5,6 +5,7 @@
 
 
 void NTRIPClient::begin(){
+  CONSOLE.println("using NTRIPClient");  
   reconnectTimeout = 0;
   ggaTimeout = 0;
   NTRIP.begin(115200);
@@ -51,7 +52,7 @@ void NTRIPClient::run(){
     int count = 0;    
     while(available()) {
       char ch = read();  
-      NTRIP.write(ch);  // send to GPS receiver (NTRIP port)
+      NTRIP.write(ch);  // send to GPS receiver (GPS receiver NTRIP serial port)
       count++;            
       //CONSOLE.print(ch);            
     }

@@ -12,12 +12,17 @@
 
 
 void SerialRobotDriver::begin(){
-  COMM.begin(115200);
+  CONSOLE.println("using robot driver: SerialRobotDriver");
+  COMM.begin(ROBOT_BAUDRATE);
   encoderTicksLeft = 0;
   encoderTicksRight = 0;
   chargeVoltage = 0;
   chargeCurrent = 0;  
   batteryVoltage = 0;
+  mowCurr = 0;
+  motorLeftCurr = 0;
+  motorRightCurr = 0;
+  batteryTemp = 0;
   triggeredLeftBumper = false;
   triggeredRightBumper = false;
   triggeredRain = false;
@@ -26,6 +31,13 @@ void SerialRobotDriver::begin(){
   motorFault = false;
   receivedEncoders = false;
   nextSummaryTime = 0;
+  nextConsoleTime = 0;
+  nextMotorTime = 0;
+  cmdMotorResponseCounter = 0;
+  cmdSummaryResponseCounter = 0;
+  cmdMotorCounter = 0;
+  cmdSummaryCounter = 0;
+  requestLeftPwm = requestRightPwm = requestMowPwm = 0;
 }
 
 void SerialRobotDriver::sendRequest(String s){
@@ -36,29 +48,32 @@ void SerialRobotDriver::sendRequest(String s){
   s += String(crc, HEX);  
   s += F("\r\n");             
   //CONSOLE.print(s);  
-  cmdResponse = s;
-  COMM.print(s);
+  //cmdResponse = s;
+  COMM.print(s);  
 }
 
 
 void SerialRobotDriver::requestSummary(){
   String req;
-  req += "AT+S";
+  req += "AT+S";  
   sendRequest(req);
+  cmdSummaryCounter++;
 }
 
 void SerialRobotDriver::requestMotorPwm(int leftPwm, int rightPwm, int mowPwm){
   String req;
   req += "AT+M,";
-  req +=  rightPwm;      
+  req += rightPwm;      
   req += ",";
-  req +=  leftPwm;    
+  req += leftPwm;    
   req += ",";  
-  if (abs(mowPwm) > 0)
-    req += "1";
-  else
-    req += "0";
+  req += mowPwm;
+  //if (abs(mowPwm) > 0)
+  //  req += "1";
+  //else
+  //  req += "0";  
   sendRequest(req);
+  cmdMotorCounter++;
 }
 
 void SerialRobotDriver::motorResponse(){
@@ -70,8 +85,8 @@ void SerialRobotDriver::motorResponse(){
     //Serial.print("ch=");
     //Serial.println(ch);
     if ((ch == ',') || (idx == cmd.length()-1)){
-      int intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      int floatValue = cmd.substring(lastCommaIdx+1, idx+1).toFloat();      
+      int intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();      
       if (counter == 1){                            
         encoderTicksRight = intValue;  // ag
       } else if (counter == 2){
@@ -94,6 +109,7 @@ void SerialRobotDriver::motorResponse(){
   if (triggeredStopButton){
     CONSOLE.println("STOPBUTTON");
   }
+  cmdMotorResponseCounter++;
   receivedEncoders=true;
 }
 
@@ -107,8 +123,8 @@ void SerialRobotDriver::summaryResponse(){
     //Serial.print("ch=");
     //Serial.println(ch);
     if ((ch == ',') || (idx == cmd.length()-1)){
-      int intValue = cmd.substring(lastCommaIdx+1, idx+1).toInt();
-      int floatValue = cmd.substring(lastCommaIdx+1, idx+1).toFloat();      
+      int intValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toInt();      
+      float floatValue = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1).toFloat();      
       if (counter == 1){                            
         batteryVoltage = floatValue;
       } else if (counter == 2){
@@ -123,11 +139,29 @@ void SerialRobotDriver::summaryResponse(){
         triggeredRain = (intValue != 0);
       } else if (counter == 7){
         motorFault = (intValue != 0);
+      } else if (counter == 8){
+        //CONSOLE.println(cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1));
+        mowCurr = floatValue;
+      } else if (counter == 9){
+        motorLeftCurr = floatValue;
+      } else if (counter == 10){
+        motorRightCurr = floatValue;
+      } else if (counter == 11){
+        batteryTemp = floatValue;
       } 
       counter++;
       lastCommaIdx = idx;
     }    
   }
+  cmdSummaryResponseCounter++;
+  /*CONSOLE.print("motor currents=");
+  CONSOLE.print(mowCurr);
+  CONSOLE.print(",");
+  CONSOLE.print(motorLeftCurr);
+  CONSOLE.print(",");
+  CONSOLE.println(motorRightCurr);*/
+  //CONSOLE.print("batteryTemp=");
+  //CONSOLE.println(batteryTemp);
 }
 
 // process response
@@ -188,9 +222,30 @@ void SerialRobotDriver::processComm(){
 
 void SerialRobotDriver::run(){
   processComm();
+  if (millis() > nextMotorTime){
+    nextMotorTime = millis() + 20; // 50 hz
+    requestMotorPwm(requestLeftPwm, requestRightPwm, requestMowPwm);
+  }
   if (millis() > nextSummaryTime){
-    nextSummaryTime = millis() + 500;
+    nextSummaryTime = millis() + 500; // 2 hz
     requestSummary();
+  }
+  if (millis() > nextConsoleTime){
+    nextConsoleTime = millis() + 1000;
+    if ( (cmdMotorResponseCounter < 30) || (cmdSummaryResponseCounter == 0) ){
+      CONSOLE.print("WARN: SerialRobot unmet communication frequency: motorFreq=");
+      CONSOLE.print(cmdMotorCounter);
+      CONSOLE.print("/");
+      CONSOLE.print(cmdMotorResponseCounter);
+      CONSOLE.print("  summaryFreq=");
+      CONSOLE.print(cmdSummaryCounter);
+      CONSOLE.print("/");
+      CONSOLE.println(cmdSummaryResponseCounter);
+      if (cmdMotorResponseCounter == 0){
+        // FIXME: maybe reset motor PID controls here?
+      }
+    }   
+    cmdMotorCounter=cmdMotorResponseCounter=cmdSummaryCounter=cmdSummaryResponseCounter=0;
   }
 }
 
@@ -202,45 +257,58 @@ SerialMotorDriver::SerialMotorDriver(SerialRobotDriver &sr): serialRobot(sr){
 
 void SerialMotorDriver::begin(){
   lastEncoderTicksLeft=0;
-  lastEncoderTicksRight=0;
-  started = false;       
+  lastEncoderTicksRight=0;         
 }
 
 void SerialMotorDriver::run(){
 }
 
 void SerialMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){  
-  serialRobot.requestMotorPwm(leftPwm, rightPwm, mowPwm);
+  //serialRobot.requestMotorPwm(leftPwm, rightPwm, mowPwm);
+  serialRobot.requestLeftPwm = leftPwm;
+  serialRobot.requestRightPwm = rightPwm;
+  serialRobot.requestMowPwm = mowPwm;
 }
 
 void SerialMotorDriver::getMotorFaults(bool &leftFault, bool &rightFault, bool &mowFault){
   leftFault = serialRobot.motorFault;
   rightFault = serialRobot.motorFault;
   if (serialRobot.motorFault){
-    //CONSOLE.println("serialRobot: motorFault");
+    CONSOLE.print("serialRobot: motorFault (lefCurr=");
+    CONSOLE.print(serialRobot.motorLeftCurr);
+    CONSOLE.print(" rightCurr=");
+    CONSOLE.print(serialRobot.motorRightCurr);
+    CONSOLE.print(" mowCurr=");
+    CONSOLE.println(serialRobot.mowCurr);
   }
   mowFault = false;
 }
 
 void SerialMotorDriver::resetMotorFaults(){
+  CONSOLE.println("serialRobot: resetting motor fault");
+  //serialRobot.requestMotorPwm(1, 1, 0);
+  //delay(1);
+  //serialRobot.requestMotorPwm(0, 0, 0);
 }
 
-void SerialMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent) {
-  leftCurrent = 0.5;
-  rightCurrent = 0.5;
-  mowCurrent = 0.8;
+void SerialMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent) {  
+  //leftCurrent = 0.5;
+  //rightCurrent = 0.5;
+  //mowCurrent = 0.8;
+  leftCurrent = serialRobot.motorLeftCurr;
+  rightCurrent = serialRobot.motorRightCurr;
+  mowCurrent = serialRobot.mowCurr;
 }
 
 void SerialMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks){
-  if (!started){
-    if (serialRobot.receivedEncoders){
-      started = true;
-      lastEncoderTicksLeft = serialRobot.encoderTicksLeft;
-      lastEncoderTicksRight = serialRobot.encoderTicksRight;
-    }
-  } 
   leftTicks = serialRobot.encoderTicksLeft - lastEncoderTicksLeft;
   rightTicks = serialRobot.encoderTicksRight - lastEncoderTicksRight;
+  if (leftTicks > 1000){
+    leftTicks = 0;
+  }
+  if (rightTicks > 1000){
+    rightTicks = 0;
+  } 
   lastEncoderTicksLeft = serialRobot.encoderTicksLeft;
   lastEncoderTicksRight = serialRobot.encoderTicksRight;
   mowTicks = 0;
@@ -331,5 +399,20 @@ void SerialRainSensorDriver::run(){
 
 bool SerialRainSensorDriver::triggered(){
   return (serialRobot.triggeredRain); 
+}
+
+// ------------------------------------------------------------------------------------
+
+SerialLiftSensorDriver::SerialLiftSensorDriver(SerialRobotDriver &sr): serialRobot(sr){
+}
+
+void SerialLiftSensorDriver::begin(){
+}
+
+void SerialLiftSensorDriver::run(){
+}
+
+bool SerialLiftSensorDriver::triggered(){
+  return (serialRobot.triggeredLift);
 }
 

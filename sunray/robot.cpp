@@ -14,7 +14,6 @@
   #include "src/esp/WiFiEsp.h"
 #endif
 #include "PubSubClient.h"
-#include "src/mpu/SparkFunMPU9250-DMP.h"
 #include "SparkFunHTU21D.h"
 #include "RunningMedian.h"
 #include "pinman.h"
@@ -22,6 +21,8 @@
 #include "motor.h"
 #include "src/driver/AmRobotDriver.h"
 #include "src/driver/SerialRobotDriver.h"
+#include "src/driver/MpuDriver.h"
+#include "src/driver/BnoDriver.h"
 #include "battery.h"
 #include "gps.h"
 #include "src/ublox/ublox.h"
@@ -47,7 +48,11 @@ const signed char orientationMatrix[9] = {
 };
 
 File stateFile;
-MPU9250_DMP imu;
+#ifdef BNO055
+  BnoDriver imuDriver;  
+#else
+  MpuDriver imuDriver;
+#endif
 #ifdef DRV_SERIAL_ROBOT
   SerialRobotDriver robotDriver;
   SerialMotorDriver motorDriver(robotDriver);
@@ -55,6 +60,7 @@ MPU9250_DMP imu;
   SerialBumperDriver bumper(robotDriver);
   SerialStopButtonDriver stopButton(robotDriver);
   SerialRainSensorDriver rainDriver(robotDriver);
+  SerialLiftSensorDriver liftDriver(robotDriver);
 #else
   AmRobotDriver robotDriver;
   AmMotorDriver motorDriver;
@@ -62,6 +68,7 @@ MPU9250_DMP imu;
   AmBumperDriver bumper;
   AmStopButtonDriver stopButton;
   AmRainSensorDriver rainDriver;
+  AmLiftSensorDriver liftDriver;
 #endif
 Motor motor;
 Battery battery;
@@ -119,6 +126,7 @@ bool stateChargerConnected = false;
 bool imuIsCalibrating = false;
 int imuCalibrationSeconds = 0;
 unsigned long nextImuCalibrationSecond = 0;
+float lateralError = 0; // lateral error
 float rollChange = 0;
 float pitchChange = 0;
 float lastGPSMotionX = 0;
@@ -168,7 +176,6 @@ unsigned long nextImuTime = 0;
 unsigned long nextTempTime = 0;
 unsigned long imuDataTimeout = 0;
 unsigned long nextSaveTime = 0;
-bool imuFound = false;
 float lastIMUYaw = 0; 
 
 bool wifiFound = false;
@@ -177,8 +184,12 @@ bool hasClient = false;
 WiFiEspClient client;
 WiFiEspClient espClient;
 PubSubClient mqttClient(espClient);
-#ifdef __linux__
-  NTRIPClient ntrip;
+//int status = WL_IDLE_STATUS;     // the Wifi radio's status
+#ifdef ENABLE_NTRIP
+  NTRIPClient ntrip;  // NTRIP tcp client (optional)
+#endif
+#ifdef GPS_USE_TCP
+  WiFiClient gpsClient; // GPS tcp client (optional)  
 #endif
 
 float dockSignal = 0;
@@ -201,6 +212,10 @@ int recoverGpsCounter = 0;
 
 RunningMedian<unsigned int,3> tofMeasurements;
 
+float stanleyTrackingNormalK = STANLEY_CONTROL_K_NORMAL;
+float stanleyTrackingNormalP = STANLEY_CONTROL_P_NORMAL;    
+float stanleyTrackingSlowK = STANLEY_CONTROL_K_SLOW;
+float stanleyTrackingSlowP = STANLEY_CONTROL_P_SLOW;    
 
 // must be defined to override default behavior
 void watchdogSetup (void){} 
@@ -548,32 +563,14 @@ void startWIFI() {
 // https://learn.sparkfun.com/tutorials/9dof-razor-imu-m0-hookup-guide#using-the-mpu-9250-dmp-arduino-library
 // start IMU sensor and calibrate
 bool startIMU(bool forceIMU){    
-  // detect MPU9250
+  // detect IMU
   uint8_t data = 0;
   int counter = 0;  
   while ((forceIMU) || (counter < 1)){          
-     I2CreadFrom(0x69, 0x75, 1, &data, 1); // whoami register
-     CONSOLE.print(F("MPU ID=0x"));
-     CONSOLE.println(data, HEX);     
-     #if defined MPU6050 || defined MPU9150      
-       if (data == 0x68) {
-         CONSOLE.println("MPU6050/9150 found");
-         imuFound = true;
-         break;
-       }
-     #endif
-     #if defined MPU9250 
-       if (data == 0x73) {
-         CONSOLE.println("MPU9255 found");
-         imuFound = true;
-         break;
-       } else if (data == 0x71) {
-         CONSOLE.println("MPU9250 found");
-         imuFound = true;
-         break;
-       }
-     #endif
-     CONSOLE.println(F("MPU6050/9150/9250/9255 not found - Did you connect AD0 to 3.3v and choose it in config.h?"));          
+     imuDriver.detect();
+     if (imuDriver.imuFound){
+       break;
+     }
      I2Creset();  
      Wire.begin();    
      #ifdef I2C_SPEED
@@ -590,10 +587,10 @@ bool startIMU(bool forceIMU){
      }
      watchdogReset();          
   }  
-  if (!imuFound) return false;  
+  if (!imuDriver.imuFound) return false;  
   counter = 0;  
   while (true){    
-    if (imu.begin() == INV_SUCCESS) break;
+    if (imuDriver.begin()) break;
     CONSOLE.print("Unable to communicate with IMU.");
     CONSOLE.print("Check connections, and try again.");
     CONSOLE.println();
@@ -606,17 +603,7 @@ bool startIMU(bool forceIMU){
       return false;
     }
     watchdogReset();     
-  }     
-  //imu.setAccelFSR(2);
-	       
-  imu.dmpBegin(DMP_FEATURE_6X_LP_QUAT  // Enable 6-axis quat
-               |  DMP_FEATURE_GYRO_CAL // Use gyro calibration
-             //  | DMP_FEATURE_SEND_RAW_ACCEL
-              , 5); // Set DMP FIFO rate to 5 Hz
-  // DMP_FEATURE_LP_QUAT can also be used. It uses the 
-  // accelerometer in low-power mode to estimate quat's.
-  // DMP_FEATURE_LP_QUAT and 6X_LP_QUAT are mutually exclusive    
-  //imu.dmpSetOrientation(orientationMatrix);
+  }              
   imuIsCalibrating = true;   
   nextImuCalibrationSecond = millis() + 1000;
   imuCalibrationSeconds = 0;
@@ -631,10 +618,10 @@ bool startIMU(bool forceIMU){
 // bus (by clocking out any garbage on the I2C bus) and then restarting the IMU module.
 // https://learn.sparkfun.com/tutorials/9dof-razor-imu-m0-hookup-guide/using-the-mpu-9250-dmp-arduino-library
 void readIMU(){
-  if (!imuFound) return;
+  if (!imuDriver.imuFound) return;
   // Check for new data in the FIFO  
   unsigned long startTime = millis();
-  bool avail = (imu.fifoAvailable() > 0);
+  bool avail = (imuDriver.isDataAvail());
   // check time for I2C access : if too long, there's an I2C issue and we need to restart I2C bus...
   unsigned long duration = millis() - startTime;
   startTime += duration;
@@ -660,81 +647,45 @@ void readIMU(){
   if (avail) {        
     //CONSOLE.println("fifoAvailable");
     // Use dmpUpdateFifo to update the ax, gx, mx, etc. values
-    if ( imu.dmpUpdateFifo() == INV_SUCCESS)
-    {      
-      // computeEulerAngles can be used -- after updating the
-      // quaternion values -- to estimate roll, pitch, and yaw
-      //  toEulerianAngle(imu.calcQuat(imu.qw), imu.calcQuat(imu.qx), imu.calcQuat(imu.qy), imu.calcQuat(imu.qz), imu.roll, imu.pitch, imu.yaw);
-      imu.computeEulerAngles(false);      
-      //CONSOLE.print(imu.ax);
+    #ifdef ENABLE_TILT_DETECTION
+      rollChange += (imuDriver.roll-stateRoll);
+      pitchChange += (imuDriver.pitch-statePitch);               
+      rollChange = 0.95 * rollChange;
+      pitchChange = 0.95 * pitchChange;
+      statePitch = imuDriver.pitch;
+      stateRoll = imuDriver.roll;        
+      //CONSOLE.print(rollChange/PI*180.0);
       //CONSOLE.print(",");
-      //CONSOLE.print(imu.ay);
-      //CONSOLE.print(",");
-      //CONSOLE.println(imu.az);
-      #ifdef ENABLE_TILT_DETECTION
-        if (stateRoll == -5000.0) {
-            stateRoll = imu.roll;
-        }
-        if (statePitch == -5000.0) {
-            statePitch = imu.pitch;
-        }
-        rollChange += (imu.roll-stateRoll);
-        pitchChange += (imu.pitch-statePitch);               
-        rollChange = 0.95 * rollChange;
-        pitchChange = 0.95 * pitchChange;
-        statePitch = imu.pitch;
-        stateRoll = imu.roll;
-#ifdef IMU_DEBUG
-        {
-            static unsigned long nextLog = 0;
-            if (nextLog < startTime) {
-                nextLog = startTime + 1000;
-                CONSOLE.print("IMU ypr= ");
-                CONSOLE.print(imu.yaw / PI * 180.0);
-                CONSOLE.print(", ");
-                CONSOLE.print(imu.pitch / PI * 180.0);
-                CONSOLE.print(", ");
-                CONSOLE.print(imu.roll / PI * 180.0);
-                CONSOLE.print("  rollChange= ");
-                CONSOLE.print(rollChange / PI * 180.0);
-                CONSOLE.print("  pitchChange= ");
-                CONSOLE.println(pitchChange / PI * 180.0);
-            }
-        }
-#endif
-        //CONSOLE.print(rollChange/PI*180.0);
-        //CONSOLE.print(",");
-        //CONSOLE.println(pitchChange/PI*180.0);
-        if ( (fabs(scalePI(imu.roll)) > 60.0/180.0*PI) || (fabs(scalePI(imu.pitch)) > 100.0/180.0*PI)
-             || (fabs(rollChange) > 30.0/180.0*PI) || (fabs(pitchChange) > 60.0/180.0*PI)   )  {
-          CONSOLE.println("ERROR IMU tilt");
-          CONSOLE.print("imu ypr=");
-          CONSOLE.print(imu.yaw/PI*180.0);
-          CONSOLE.print(",");
-          CONSOLE.print(imu.pitch/PI*180.0);
-          CONSOLE.print(",");
-          CONSOLE.print(imu.roll/PI*180.0);
-          CONSOLE.print(" rollChange=");
-          CONSOLE.print(rollChange/PI*180.0);
-          CONSOLE.print(" pitchChange=");
-          CONSOLE.println(pitchChange/PI*180.0);
-          stateSensor = SENS_IMU_TILT;
-          setOperation(OP_ERROR);
-        }           
-      #endif
-      motor.robotPitch = scalePI(imu.pitch);
-      imu.yaw = scalePI(imu.yaw);
-      //CONSOLE.println(imu.yaw / PI * 180.0);
-      lastIMUYaw = scalePI(lastIMUYaw);
-      lastIMUYaw = scalePIangles(lastIMUYaw, imu.yaw);
-      stateDeltaIMU = -scalePI ( distancePI(imu.yaw, lastIMUYaw) );  
-      //CONSOLE.print(imu.yaw);
-      //CONSOLE.print(",");
-      //CONSOLE.print(stateDeltaIMU/PI*180.0);
-      //CONSOLE.println();
-      lastIMUYaw = imu.yaw;      
-      imuDataTimeout = startTime+ 10000;
-    }     
+      //CONSOLE.println(pitchChange/PI*180.0);
+      if ( (fabs(scalePI(imuDriver.roll)) > 60.0/180.0*PI) || (fabs(scalePI(imuDriver.pitch)) > 100.0/180.0*PI)
+            || (fabs(rollChange) > 30.0/180.0*PI) || (fabs(pitchChange) > 60.0/180.0*PI)   )  {
+        CONSOLE.println("ERROR IMU tilt");
+        CONSOLE.print("imu ypr=");
+        CONSOLE.print(imuDriver.yaw/PI*180.0);
+        CONSOLE.print(",");
+        CONSOLE.print(imuDriver.pitch/PI*180.0);
+        CONSOLE.print(",");
+        CONSOLE.print(imuDriver.roll/PI*180.0);
+        CONSOLE.print(" rollChange=");
+        CONSOLE.print(rollChange/PI*180.0);
+        CONSOLE.print(" pitchChange=");
+        CONSOLE.println(pitchChange/PI*180.0);
+        stateSensor = SENS_IMU_TILT;
+        setOperation(OP_ERROR);
+      }           
+    #endif
+    motor.robotPitch = scalePI(imuDriver.pitch);
+    imuDriver.yaw = scalePI(imuDriver.yaw);
+    //CONSOLE.println(imuDriver.yaw / PI * 180.0);
+    lastIMUYaw = scalePI(lastIMUYaw);
+    lastIMUYaw = scalePIangles(lastIMUYaw, imuDriver.yaw);
+    stateDeltaIMU = -scalePI ( distancePI(imuDriver.yaw, lastIMUYaw) );  
+    //CONSOLE.print(imuDriver.yaw);
+    //CONSOLE.print(",");
+    //CONSOLE.print(stateDeltaIMU/PI*180.0);
+    //CONSOLE.println();
+    lastIMUYaw = imuDriver.yaw;      
+    imuDataTimeout = millis() + 10000;         
   }     
 }
 
@@ -756,19 +707,19 @@ bool checkAT24C32() {
       }
     }
   }
-  return (r == 1);
+  #ifdef __linux__  
+    return true;
+  #else
+    return (r == 1);
+  #endif
 }
 
 
 // robot start routine
 void start(){    
-  pinMan.begin();       
+  pinMan.begin();         
   // keep battery switched ON
-  pinMode(pinBatterySwitch, OUTPUT);    
-  //pinMode(pinDockingReflector, INPUT);
-  digitalWrite(pinBatterySwitch, HIGH);         
-  pinMode(pinButton, INPUT_PULLUP);
-  pinMode(pinRain, INPUT);
+  batteryDriver.begin();  
   buzzer.begin();      
   CONSOLE.begin(CONSOLE_BAUDRATE);  
     
@@ -788,7 +739,12 @@ void start(){
   delay(1500);
     
   #if defined(ENABLE_SD)
-    if (SD.begin(SDCARD_SS_PIN)){
+    #ifdef __linux__
+      bool res = SD.begin();
+    #else 
+      bool res = SD.begin(SDCARD_SS_PIN);
+    #endif    
+    if (res){
       CONSOLE.println("SD card found!");
       #if defined(ENABLE_SD_LOG)        
         sdSerial.beginSD();  
@@ -804,10 +760,10 @@ void start(){
   CONSOLE.print("compiled for: ");
   CONSOLE.println(BOARD);
   
-  batteryDriver.begin();
   robotDriver.begin();
   motorDriver.begin();
-  rainDriver.begin();  
+  rainDriver.begin();
+  liftDriver.begin();  
   battery.begin();      
   stopButton.begin();
 
@@ -840,7 +796,12 @@ void start(){
   //CONSOLE.println("change:     #define SERIAL_BUFFER_SIZE 128     into into:     #define SERIAL_BUFFER_SIZE 1024");
   CONSOLE.println("-----------------------------------------------------");
   
-  gps.begin(GPS,GPS_BAUDRATE);   
+  #ifdef GPS_USE_TCP
+    gps.begin(gpsClient, GPS_HOST, GPS_PORT);
+  #else 
+    gps.begin(GPS, GPS_BAUDRATE);   
+  #endif
+
   maps.begin();      
   //maps.clipperTest();
   
@@ -848,7 +809,7 @@ void start(){
   
   // initialize ESP module
   startWIFI();
-  #ifdef __linux__
+  #ifdef ENABLE_NTRIP
     ntrip.begin();  
   #endif
   
@@ -979,14 +940,14 @@ void computeRobotState(){
   stateY += distOdometry/100.0 * sin(stateDelta);        
   if (stateOp == OP_MOW) statMowDistanceTraveled += distOdometry/100.0;
   
-  if ((imuFound) && (maps.useIMU)) {
+  if ((imuDriver.imuFound) && (maps.useIMU)) {
     // IMU available and should be used by planner
     stateDelta = scalePI(stateDelta + stateDeltaIMU );          
   } else {
     // odometry
     stateDelta = scalePI(stateDelta + deltaOdometry);  
   }
-  if (imuFound){
+  if (imuDriver.imuFound){
     stateDeltaSpeedIMU = 0.99 * stateDeltaSpeedIMU + 0.01 * stateDeltaIMU / 0.02; // IMU yaw rotation speed (20ms timestep)
   }
   stateDeltaSpeedWheels = 0.99 * stateDeltaSpeedWheels + 0.01 * deltaOdometry / 0.02; // wheels yaw rotation speed (20ms timestep) 
@@ -999,7 +960,7 @@ void computeRobotState(){
   stateDeltaLast = stateDelta;
   //CONSOLE.println(stateDeltaSpeedLP/PI*180.0);
 
-  if (imuFound) {
+  if (imuDriver.imuFound) {
     // compute difference between IMU yaw rotation speed and wheels yaw rotation speed
     diffIMUWheelYawSpeed = stateDeltaSpeedIMU - stateDeltaSpeedWheels;
     diffIMUWheelYawSpeedLP = diffIMUWheelYawSpeedLP * 0.95 + fabs(diffIMUWheelYawSpeed) * 0.05;  
@@ -1074,7 +1035,7 @@ void detectSensorMalfunction(){
       return;
     }  
   }
-  if (ENABLE_FAULT_DETECTION){
+  if (ENABLE_FAULT_OBSTACLE_AVOIDANCE){
     if (motor.motorError){
       // this is the molehole situation: motor error will permanently trigger on molehole => we try obstacle avoidance (molehole avoidance strategy)
       motor.motorError = false; // reset motor error flag
@@ -1096,10 +1057,25 @@ void detectSensorMalfunction(){
   }
 }
 
+// detect lift 
+// returns true, if lift detected, otherwise false
+bool detectLift(){  
+  #ifdef ENABLE_LIFT_DETECTION
+    if (liftDriver.triggered()) {
+      if (stateOp != OP_ERROR){        
+        stateSensor = SENS_LIFT;
+        CONSOLE.println("ERROR LIFT");        
+        setOperation(OP_ERROR);
+        return true;
+      }      
+    }  
+  #endif 
+  return false;
+}
 
 // detect obstacle (bumper, sonar, ToF)
 // returns true, if obstacle detected, otherwise false
-bool detectObstacle(){  
+bool detectObstacle(){   
   if (! ((robotShouldMoveForward()) || (robotShouldRotate())) ) return false;      
   if (TOF_ENABLE){
     if (millis() >= nextToFTime){
@@ -1120,6 +1096,17 @@ bool detectObstacle(){
     }    
   }   
   
+  #ifdef ENABLE_LIFT_DETECTION
+    #ifdef LIFT_OBSTACLE_AVOIDANCE
+      if ( (millis() > linearMotionStartTime + BUMPER_DEADTIME) && (liftDriver.triggered()) ) {
+        CONSOLE.println("lift sensor obstacle!");    
+        statMowBumperCounter++;
+        triggerObstacle();    
+        return true;
+      }
+    #endif
+  #endif
+
   if (BUMPER_ENABLE){
     if ( (millis() > linearMotionStartTime + BUMPER_DEADTIME) && (bumper.obstacle()) ){  
       CONSOLE.println("bumper obstacle!");    
@@ -1196,7 +1183,7 @@ bool detectObstacleRotation(){
       }
     }
   }*/
-  if (imuFound){
+  if (imuDriver.imuFound){
     if (millis() > angularMotionStartTime + 3000) {                  
       if (fabs(stateDeltaSpeedLP) < 3.0/180.0 * PI){ // less than 3 degree/s yaw speed, e.g. due to obstacle
         triggerObstacleRotation();
@@ -1225,7 +1212,7 @@ void trackLine(){
   if (maps.trackReverse) targetDelta = scalePI(targetDelta + PI);
   targetDelta = scalePIangles(targetDelta, stateDelta);
   trackerDiffDelta = distancePI(stateDelta, targetDelta);                         
-  float lateralError = distanceLineInfinite(stateX, stateY, lastTarget.x(), lastTarget.y(), target.x(), target.y());        
+  lateralError = distanceLineInfinite(stateX, stateY, lastTarget.x(), lastTarget.y(), target.x(), target.y());        
   float distToPath = distanceLine(stateX, stateY, lastTarget.x(), lastTarget.y(), target.x(), target.y());        
   float targetDist = maps.distanceToTargetPoint(stateX, stateY);
   
@@ -1283,11 +1270,11 @@ void trackLine(){
       if (sonar.nearObstacle()) linear = 0.1; // slow down near obstacles
     }      
     //angula                                    r = 3.0 * trackerDiffDelta + 3.0 * lateralError;       // correct for path errors 
-    float k = STANLEY_CONTROL_K_NORMAL;
-    float p = STANLEY_CONTROL_P_NORMAL;    
+    float k = stanleyTrackingNormalK; // STANLEY_CONTROL_K_NORMAL;
+    float p = stanleyTrackingNormalP; // STANLEY_CONTROL_P_NORMAL;    
     if (maps.trackSlow) {
-      k = STANLEY_CONTROL_K_SLOW;   
-      p = STANLEY_CONTROL_P_SLOW;          
+      k = stanleyTrackingSlowK; //STANLEY_CONTROL_K_SLOW;   
+      p = stanleyTrackingSlowP; //STANLEY_CONTROL_P_SLOW;          
     }
     angular =  p * trackerDiffDelta + atan2(k * lateralError, (0.001 + fabs(motor.linearSpeedSet)));       // correct for path errors           
     /*pidLine.w = 0;              
@@ -1335,7 +1322,7 @@ void trackLine(){
     // no gps solution
     if (REQUIRE_VALID_GPS){
       if (!maps.isUndocking()) { 
-        //CONSOLE.println("no gps solution!");
+        CONSOLE.println("WARN: no gps solution!");
         stateSensor = SENS_GPS_INVALID;
         //setOperation(OP_ERROR);
         //buzzer.sound(SND_STUCK, true);          
@@ -1418,7 +1405,7 @@ void trackLine(){
 
 // robot main loop
 void run(){  
-  #ifdef __linux__
+  #ifdef ENABLE_NTRIP
     ntrip.run();
   #endif
   robotDriver.run();
@@ -1428,6 +1415,7 @@ void run(){
   batteryDriver.run();
   motorDriver.run();
   rainDriver.run();
+  liftDriver.run();
   motor.run();
   sonar.run();
   maps.run();  
@@ -1441,19 +1429,21 @@ void run(){
   
   // temp
   if (millis() > nextTempTime){
-    // https://learn.sparkfun.com/tutorials/htu21d-humidity-sensor-hookup-guide
     nextTempTime = millis() + 60000;
-    stateTemp = myHumidity.readTemperature();
-    statTempMin = min(statTempMin, stateTemp);
-    statTempMax = max(statTempMax, stateTemp);
-    stateHumidity = myHumidity.readHumidity();      
-    CONSOLE.print("temp=");
-    CONSOLE.print(stateTemp,1);
-    CONSOLE.print("  humidity=");
-    CONSOLE.print(stateHumidity,0);    
-    CONSOLE.print(" ");    
+    #ifdef USE_TEMP_SENSOR
+      // https://learn.sparkfun.com/tutorials/htu21d-humidity-sensor-hookup-guide
+      stateTemp = myHumidity.readTemperature();
+      statTempMin = min(statTempMin, stateTemp);
+      statTempMax = max(statTempMax, stateTemp);
+      stateHumidity = myHumidity.readHumidity();      
+      CONSOLE.print("temp=");
+      CONSOLE.print(stateTemp,1);
+      CONSOLE.print("  humidity=");
+      CONSOLE.print(stateHumidity,0);    
+      CONSOLE.println();        
+    #endif
     logCPUHealth();
-    CONSOLE.println();    
+    CONSOLE.println();
   }
   
   // IMU
@@ -1472,7 +1462,7 @@ void run(){
           imuIsCalibrating = false;
           CONSOLE.println();                
           lastIMUYaw = 0;          
-          imu.resetFifo();
+          imuDriver.resetData();
           imuDataTimeout = millis() + 10000;
         }
       }       
@@ -1521,44 +1511,53 @@ void run(){
       }
     }
 
-    if (!imuIsCalibrating){     
-      
-      if (battery.chargerConnected() != stateChargerConnected) {    
-        stateChargerConnected = battery.chargerConnected(); 
-        if (stateChargerConnected){      
-          stateChargerConnected = true;
-          setOperation(OP_CHARGE);                
-        }           
-      }     
-      if (battery.chargerConnected()){
-        if ((stateOp == OP_IDLE) || (stateOp == OP_CHARGE)){
-          maps.setIsDocked(true);               
-          // get robot position and yaw from map
-          // sensing charging contacts means we are in docking station - we use docking point coordinates to get rid of false fix positions in
-          // docking station
-          maps.setRobotStatePosToDockingPos(stateX, stateY, stateDelta);
-          // get robot yaw orientation from map 
-          //float tempX;
-          //float tempY;
-          //maps.setRobotStatePosToDockingPos(tempX, tempY, stateDelta);                       
-        }
-        battery.resetIdle();        
+    if (battery.chargerConnected() != stateChargerConnected) {    
+      stateChargerConnected = battery.chargerConnected(); 
+      if (stateChargerConnected){      
+        // charger connected event        
+        setOperation(OP_CHARGE);                
       } else {
-        if ((stateOp == OP_IDLE) || (stateOp == OP_CHARGE)){
-          maps.setIsDocked(false);
-        }
+        // charger disconnected event
+        motor.enableTractionMotors(true); // allow traction motors to operate                       
+        if (stateOp == OP_CHARGE) setOperation(OP_IDLE);
+      }           
+    } 
+
+
+    // some things to do permanently while charger connected/not connected
+    if (battery.chargerConnected()){
+      if ((stateOp == OP_IDLE) || (stateOp == OP_CHARGE)){
+        maps.setIsDocked(true);               
+        // get robot position and yaw from map
+        // sensing charging contacts means we are in docking station - we use docking point coordinates to get rid of false fix positions in
+        // docking station
+        maps.setRobotStatePosToDockingPos(stateX, stateY, stateDelta);
+        // get robot yaw orientation from map 
+        //float tempX;
+        //float tempY;
+        //maps.setRobotStatePosToDockingPos(tempX, tempY, stateDelta);                       
       }
-      
-      
+      battery.resetIdle();        
+    } else {
+      if ((stateOp == OP_IDLE) || (stateOp == OP_CHARGE)){
+        maps.setIsDocked(false);
+      }
+    }          
+ 
+    
+    if (!imuIsCalibrating){     
+            
       if ((stateOp == OP_MOW) ||  (stateOp == OP_DOCK)) {              
         
         if (retryOperationTime == 0){ // if path planning was successful 
           if (driveReverseStopTime > 0){
             // obstacle avoidance
-            motor.setLinearAngularSpeed(-0.1,0);            
+            motor.setLinearAngularSpeed(-0.1,0);
+            motor.setMowState(false);                        
             if (millis() > driveReverseStopTime){
               CONSOLE.println("driveReverseStopTime");
-              motor.stopImmediately(false);
+              motor.stopImmediately(false); 
+              detectLift();
               driveReverseStopTime = 0;
               maps.addObstacle(stateX, stateY);
               Point pt;
@@ -1568,10 +1567,11 @@ void run(){
             }            
           } else if (driveForwardStopTime > 0){
             // rotate stuck avoidance
-            motor.setLinearAngularSpeed(0.1,0);            
+            motor.setLinearAngularSpeed(0.1,0);
+            motor.setMowState(false);            
             if (millis() > driveForwardStopTime){
               CONSOLE.println("driveForwardStopTime");
-              motor.stopImmediately(false);
+              motor.stopImmediately(false);  
               driveForwardStopTime = 0;
               /*maps.addObstacle(stateX, stateY);
               Point pt;
@@ -1584,8 +1584,8 @@ void run(){
             trackLine();
             detectSensorMalfunction();
             if (!detectObstacle()){
-              detectObstacleRotation();
-            }                   
+              detectObstacleRotation();                              
+            }   
           }        
         }        
         battery.resetIdle();
@@ -1620,8 +1620,6 @@ void run(){
               }
             }
           }
-        } else {
-          setOperation(OP_IDLE);        
         }        
       }      
       
@@ -1718,6 +1716,7 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
       break;
     case OP_MOW:      
       CONSOLE.println(" OP_MOW");      
+      motor.enableTractionMotors(true); // allow traction motors to operate         
       motor.setLinearAngularSpeed(0,0);      
       dockingInitiatedByOperator = false;
       dockReasonRainTriggered = false;
@@ -1743,13 +1742,21 @@ void setOperation(OperationType op, bool allowRepeat, bool initiatedbyOperator){
       break;
     case OP_CHARGE:
       CONSOLE.println(" OP_CHARGE");
-      motor.setLinearAngularSpeed(0,0, false);
+      //motor.stopImmediately(true); // do not use PID to get to stop 
+      motor.setLinearAngularSpeed(0,0, false); 
       motor.setMowState(false);     
+      //motor.enableTractionMotors(false); // keep traction motors off (motor drivers tend to generate some incorrect encoder values when stopped while not turning)                 
       break;
     case OP_ERROR:            
       CONSOLE.println(" OP_ERROR"); 
-      motor.setLinearAngularSpeed(0,0);
-      motor.setMowState(false);      
+      if (stateOp == OP_CHARGE){
+        CONSOLE.println(" - ignoring because we are charging");
+        op = stateOp;
+      } else {        
+        motor.stopImmediately(true); // do not use PID to get to stop
+        //motor.setLinearAngularSpeed(0,0);
+        motor.setMowState(false);      
+      }  
       break;
   }
 

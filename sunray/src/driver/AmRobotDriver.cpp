@@ -9,6 +9,8 @@
 #include "../../helper.h"
 #include "../../robot.h"
 
+#ifndef __linux__
+
 
 volatile unsigned long leftReleaseTime = 0;
 volatile unsigned long rightReleaseTime = 0;
@@ -26,6 +28,7 @@ bool enableActive = LOW;
 
 
 void AmRobotDriver::begin(){
+  CONSOLE.println("using robot driver: AmRobotDriver");
 }
 
 
@@ -191,13 +194,13 @@ void AmMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, flo
     float offset      = -1.65;
     #ifdef MOTOR_DRIVER_BRUSHLESS
       float scale       = 7.57;   // ADC voltage to amp      
-      leftCurrent = (((float)ADC2voltage(analogRead(pinMotorRightSense))) + offset) *scale;
-      rightCurrent = (((float)ADC2voltage(analogRead(pinMotorLeftSense))) + offset) *scale;
+      leftCurrent = (((float)ADC2voltage(analogRead(pinMotorLeftSense))) + offset) *scale;
+      rightCurrent = (((float)ADC2voltage(analogRead(pinMotorRightSense))) + offset) *scale;
       mowCurrent = (((float)ADC2voltage(analogRead(pinMotorMowSense))) + offset) *scale; 
     #else
       float scale       = 1.905;   // ADC voltage to amp      
-      leftCurrent = ((float)ADC2voltage(analogRead(pinMotorRightSense))) *scale;
-      rightCurrent = ((float)ADC2voltage(analogRead(pinMotorLeftSense))) *scale;
+      leftCurrent = ((float)ADC2voltage(analogRead(pinMotorLeftSense))) *scale;
+      rightCurrent = ((float)ADC2voltage(analogRead(pinMotorRightSense))) *scale;
       mowCurrent = ((float)ADC2voltage(analogRead(pinMotorMowSense))) *scale  *2;	          
     #endif
 }
@@ -351,6 +354,7 @@ void AmBumperDriver::run(){
 void AmStopButtonDriver::begin(){
   nextControlTime = 0;
   pressed = false;  
+  pinMode(pinButton, INPUT_PULLUP);  
 }
 
 void AmStopButtonDriver::run(){
@@ -371,6 +375,7 @@ bool AmStopButtonDriver::triggered(){
 void AmRainSensorDriver::begin(){
   nextControlTime = 0;
   isRaining = false;  
+  pinMode(pinRain, INPUT);
 }
 
 void AmRainSensorDriver::run(){
@@ -383,4 +388,25 @@ void AmRainSensorDriver::run(){
 bool AmRainSensorDriver::triggered(){
   return isRaining;
 }
+
+// ------------------------------------------------------------------------------------
+
+
+void AmLiftSensorDriver::begin(){
+  nextControlTime = 0;
+  isLifted = false;  
+}
+
+void AmLiftSensorDriver::run(){
+  unsigned long t = millis();
+  if (t < nextControlTime) return;
+  nextControlTime = t + 100;                                       // save CPU resources by running at 10 Hz
+  isLifted = false; //(digitalRead(pinLift)== LOW);
+}
+
+bool AmLiftSensorDriver::triggered(){
+  return isLifted;
+}
+
+#endif
 

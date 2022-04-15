@@ -16,7 +16,7 @@
 
 #include "config.h"
 
-#define VERSION "ESP32 firmware V0.3.6,Bluetooth V4.0 LE"
+#define VERSION "ESP32 firmware V0.4.0,Bluetooth V4.0 LE"
 
 // watch dog timeout (WDT) in seconds
 #define WDT_TIMEOUT 60
@@ -559,6 +559,7 @@ void setup() {
    mqtt_setup();
 #endif
   //startWIFI();
+  relay_setup();
 }
 
 
@@ -677,6 +678,7 @@ void loop() {
 #ifdef USE_MQTT
   mqtt_loop();
 #endif
+  relay_loop();
   if (millis() > nextWatchDogResetTime) {
     nextWatchDogResetTime = millis() + 1000;
     esp_task_wdt_reset(); // watch dog reset

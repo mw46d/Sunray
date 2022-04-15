@@ -14,8 +14,9 @@
 #include "Arduino.h"			
 #include "SkyTraqNmeaParser.h"
 #include "../../gps.h"
+#include "../driver/RobotDriver.h"
 
-class SKYTRAQ : public SkyTraqNotifyFun{
+class SKYTRAQ : public SkyTraqNotifyFun, public GpsDriver {
   public:
     typedef enum {
         GOT_NONE,
@@ -28,53 +29,36 @@ class SKYTRAQ : public SkyTraqNotifyFun{
         GOT_PAYLOAD,
         GOT_CHK 
 
-    } state_t;    
-    
-    unsigned long iTOW;
-    int numSV;         // #signals tracked 
-    int numSVdgps;     // #signals tracked with DGPS signal
-    double lon;        // deg
-    double lat;        // deg
-    double height;     // m
-    float relPosN;     // m
-    float relPosE;     // m
-    float relPosD;     // m
-    float heading;     // rad
-    float groundSpeed; // m/s
-    float accuracy;    // m
-    float hAccuracy;   // m
-    float vAccuracy;   // m
-    SolType solution;    
-    bool solutionAvail;
-    unsigned long dgpsAge;
-    unsigned long chksumErrorCounter;
-    unsigned long dgpsChecksumErrorCounter;
-    unsigned long dgpsPacketCounter;    
-    
-    SKYTRAQ();
-    void begin(HardwareSerial& bus,uint32_t baud);
-    void run();
-    bool configure();  
-    void reboot();
+    } state_t;        
+    SKYTRAQ();    
+    void begin(Client &client, char *host, uint16_t port) override;
+    void begin(HardwareSerial& bus,uint32_t baud) override;
+    void run() override;
+    bool configure() override;  
+    void reboot() override;
   private:
     // The SkyTraqNmeaParser object
     SkyTraqNmeaParser parser;
 
     uint32_t _baud;  	
     HardwareSerial* _bus;
+    Client* _client;
     state_t state;
     int msgid;
     int msglen;
     int chk;
     int count;
     char payload[2000];                                          
+    bool useTCP;
     bool debug;
     bool verbose;
     // The SkyTraqNmeaParser result
     const GnssData* gdata;
     // Notification of SkyTraqNmeaParser
     U32 gnssUpdateFlag;
+    unsigned long solutionTimeout;
     
+    void begin();
     void addchk(int b);
     void dispatchMessage();
     long unpack_int32(int offset);

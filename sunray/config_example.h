@@ -1,6 +1,6 @@
 // Ardumower Sunray 
 // Copyright (c) 2013-2020 by Alexander Grau, Grau GmbH
-// Licensed GPLv3 for open source use
+// Licensed GPLv3 for open soue use
 // or Grau GmbH Commercial License for commercial use (http://grauonline.de/cms2/?page_id=153)
 
 /* 
@@ -31,6 +31,7 @@
 Adafruit Grand Central M4 NOTE: You have to add SDA, SCL pull-up resistors to the board 
 and deactivate Due clone reset cicuit (JP13):
 https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#Adafruit_Grand_Central_M4
+NOTE: If you get compilation errors with Adafruit Grand Central M4, you may have to downgrade 'Adafruit SAMD Boards' to version to 1.7.5.
 
 Arduino Due UPLOAD NOTE:  
 
@@ -51,7 +52,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
   #include "sdserial.h"
   #include "src/agcm4/adafruit_grand_central.h"
   #ifdef __linux__
-    #include "src/raspi/raspi.h"    
+    #include "src/linux/linux.h"    
     #include <Console.h>
   #endif
 #endif
@@ -75,10 +76,18 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 //#define MPU6050
 //#define MPU9150
 #define MPU9250   // also choose this for MPU9255
-
+//#define BNO055
+#define MPU_ADDR 0x69  // I2C address (0x68 if AD0=LOW, 0x69 if AD0=HIGH)
 
 // should the mower turn off if IMU is tilt over? (yes: uncomment line, no: comment line)
 #define ENABLE_TILT_DETECTION  1
+
+// --------- lift sensor (only Alfred mower) ---------------------------------------------
+// should the lift sensor be enabled? (yes: uncomment line, no: comment line)
+#define ENABLE_LIFT_DETECTION  1
+// should the lift sensor be used for obstacle avoidance (if not, mower will simply go into error if lifted)
+#define LIFT_OBSTACLE_AVOIDANCE 1  
+
 
 // ------- SD card map load/resume and logging ---------------------------------
 // all serial console output can be logged to a (FAT32 formatted) SD card
@@ -181,6 +190,9 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define ENABLE_FAULT_DETECTION  true
 //#define ENABLE_FAULT_DETECTION  false       // use this if you keep getting 'motor error'
 
+// should the robot trigger obstacle avoidance on motor errors if motor recovery failed?
+#define ENABLE_FAULT_OBSTACLE_AVOIDANCE true  
+
 // ----------- dynamic mowingm motor RPM --------------
 // RPM of the mow motor will be adjust over the actual current of the mow motor. If the motor needs more current the PWM will be higher.
 // it can be used 3 different functions for the calculation of the PWM depended´nt on the mowMotor current. The root-Function is recommended
@@ -219,6 +231,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define UDP_SERVER_PORT 4210
 
 // --------- NTRIP client (linux only, highly experimental) ---------------------------------
+//#define ENABLE_NTRIP 1            // must be activated to use Linux NTRIP
 #define NTRIP_HOST "195.227.70.119"   // sapos nrw
 #define NTRIP_PORT 2101
 #define NTRIP_MOUNT "VRS_3_4G_NW"
@@ -242,7 +255,8 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // see Wiki on how to install the ultrasonic sensors: 
 // https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#Ultrasonic_sensor
 
-//#define SONAR_ENABLE true
+#define SONAR_INSTALLED 1              // uncomment if ultrasonic sensors are installed
+//#define SONAR_ENABLE true              // should ultrasonic sensor be used?
 #define SONAR_ENABLE false
 #define SONAR_TRIGGER_OBSTACLES true     // should sonar be used to trigger obstacles? if not, mower will only slow down
 #define SONAR_LEFT_OBSTACLE_CM   10      // stop mowing operation below this distance (cm) 
@@ -301,7 +315,8 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 //    (for Adafruit Grand Central M4: 'packages\adafruit\hardware\samd\xxxxx\cores\arduino\RingBuffer.h')
 // change:     #define SERIAL_BUFFER_SIZE 128     into into:     #define SERIAL_BUFFER_SIZE 1024
 
-//#define GPS_SKYTRAQ  1               // comment for ublox gps, uncomment for skytraq gps 
+//#define GPS_USE_TCP 1                    // comment out for serial gps, activate for TCP client-based GPS
+//#define GPS_SKYTRAQ  1               // comment out for ublox gps, uncomment for skytraq gps/NMEA
 
 #define REQUIRE_VALID_GPS  true       // mower will pause if no float and no fix GPS solution during mowing (recommended)
 //#define REQUIRE_VALID_GPS  false    // mower will continue to mow if no float or no fix solution (not recommended)
@@ -379,13 +394,15 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
                                  //  1 beep=start/stop, 5 beeps=dock, 3 beeps=R/C mode ON/OFF)
 //#define BUTTON_CONTROL false   // additional features deactivated
 
+//#define USE_TEMP_SENSOR   // only activate if temp sensor (htu21d) connected
 
 // activate support for model R/C control?
 // use PCB pin 'mow' for R/C model control speed and PCB pin 'steering' for R/C model control steering, 
 // also connect 5v and GND and activate model R/C control via PCB P20 start button for 3 sec.
 // more details: https://wiki.ardumower.de/index.php?title=Ardumower_Sunray#R.2FC_model
-//#define RCMODEL_ENABLE true
-#define RCMODEL_ENABLE false
+//#define RCMODEL_ENABLE 1  // uncomment line to turn on R/C control
+
+#define BUZZER_ENABLE 1 // uncomment to disable
 
 
 // ------ experimental options  -------------------------
@@ -405,8 +422,12 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
   #define BOARD "Adafruit Grand Central M4"
   #define CONSOLE Serial      // Adafruit Grand Central M4 
 #elif __linux__ 
-  #define BOARD "Raspberry PI"
+  #define BOARD "Linux"
   #define CONSOLE Console 
+#else
+  #ifdef __cplusplus
+    #error "ERROR: you need to choose either Arduino Due or Adafruit GCM4 in Arduino IDE"
+  #endif
 #endif
 
 // ------- serial ports and baudrates---------------------------------
@@ -416,6 +437,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define BLE_NAME      "Ardumower"     // name for BLE module
 #define GPS_BAUDRATE  115200          // baudrate for GPS RTK module
 #define WIFI_BAUDRATE 115200          // baudrate for WIFI module
+#define ROBOT_BAUDRATE 115200         // baudrate for Linux serial robot (non-Ardumower)
 
 #ifdef _SAM3XA_                 // Arduino Due
   #define WIFI Serial1
@@ -434,6 +456,8 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
   #define BLE SerialBLE
   #define GPS SerialGPS
   #define SERIAL_GPS_PATH "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00"  
+  #define GPS_HOST "127.0.0.1"  
+  #define GPS_PORT 2947  
   #define ROBOT SerialROBOT
   #define SERIAL_ROBOT_PATH "/dev/ttyUSB1"  
   #define NTRIP SerialNTRIP
@@ -452,77 +476,90 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 
 // ------ hardware pins---------------------------------------
 // no configuration needed here
-#define pinMotorEnable  37         // EN motors enable
-#define pinMotorLeftPWM 5          // M1_IN1 left motor PWM pin
-#define pinMotorLeftDir 31         // M1_IN2 left motor Dir pin
-#define pinMotorLeftSense A1       // M1_FB  left motor current sense
-#define pinMotorLeftFault 25       // M1_SF  left motor fault
-                                                             
-#define pinMotorRightPWM  3        // M2_IN1 right motor PWM pin
-#define pinMotorRightDir 33        // M2_IN2 right motor Dir pin
-#define pinMotorRightSense A0      // M2_FB  right motor current sense
-#define pinMotorRightFault 27      // M2_SF  right motor fault
-                                    
-#define pinMotorMowPWM 2           // M1_IN1 mower motor PWM pin (if using MOSFET, use this pin)
-#define pinMotorMowDir 29          // M1_IN2 mower motor Dir pin (if using MOSFET, keep unconnected)
-#define pinMotorMowSense A3        // M1_FB  mower motor current sense  
-#define pinMotorMowFault 26        // M1_SF  mower motor fault   (if using MOSFET/L298N, keep unconnected)
-#define pinMotorMowEnable 28       // EN mower motor enable      (if using MOSFET/L298N, keep unconnected)
-#define pinMotorMowRpm A11
-    
-#define pinFreeWheel 8             // front/rear free wheel sensor    
-#define pinBumperLeft 39           // bumper pins
-#define pinBumperRight 38
 
-#define pinDropLeft 45           // drop pins                                                                                          Dropsensor - Absturzsensor
-#define pinDropRight 23          // drop pins                                                                                          Dropsensor - Absturzsensor
+#ifdef __linux__
+  // ...
+#else
+  #define pinMotorEnable  37         // EN motors enable
+  #define pinMotorLeftPWM 5          // M1_IN1 left motor PWM pin
+  #define pinMotorLeftDir 31         // M1_IN2 left motor Dir pin
+  #define pinMotorLeftSense A1       // M1_FB  left motor current sense
+  #define pinMotorLeftFault 25       // M1_SF  left motor fault
+                                                              
+  #define pinMotorRightPWM  3        // M2_IN1 right motor PWM pin
+  #define pinMotorRightDir 33        // M2_IN2 right motor Dir pin
+  #define pinMotorRightSense A0      // M2_FB  right motor current sense
+  #define pinMotorRightFault 27      // M2_SF  right motor fault
+                                      
+  #define pinMotorMowPWM 2           // M1_IN1 mower motor PWM pin (if using MOSFET, use this pin)
+  #define pinMotorMowDir 29          // M1_IN2 mower motor Dir pin (if using MOSFET, keep unconnected)
+  #define pinMotorMowSense A3        // M1_FB  mower motor current sense  
+  #define pinMotorMowFault 26        // M1_SF  mower motor fault   (if using MOSFET/L298N, keep unconnected)
+  #define pinMotorMowEnable 28       // EN mower motor enable      (if using MOSFET/L298N, keep unconnected)
+  #define pinMotorMowRpm A11
+      
+  #define pinFreeWheel 8             // front/rear free wheel sensor    
+  #define pinBumperLeft 39           // bumper pins
+  #define pinBumperRight 38
 
-#define pinSonarCenterTrigger 24   // ultrasonic sensor pins
-#define pinSonarCenterEcho 22
-#define pinSonarRightTrigger 30    
-#define pinSonarRightEcho 32
-#define pinSonarLeftTrigger 34         
-#define pinSonarLeftEcho 36
-#define pinPerimeterRight A4       // perimeter
-#define pinDockingReflector A4     // docking IR reflector
-#define pinPerimeterLeft A5
+  #define pinDropLeft 45           // drop pins                                                                                          Dropsensor - Absturzsensor
+  #define pinDropRight 23          // drop pins                                                                                          Dropsensor - Absturzsensor
 
-#define pinLED 13                  // LED
-#define pinBuzzer 53               // Buzzer
-#define pinTilt 35                 // Tilt sensor (required for TC-G158 board)
-#define pinButton 51               // digital ON/OFF button
-#define pinBatteryVoltage A2       // battery voltage sensor
-#define pinBatterySwitch 4         // battery-OFF switch   
-#define pinChargeVoltage A9        // charging voltage sensor
-#define pinChargeCurrent A8        // charge current sensor
-#define pinChargeRelay 50          // charge relay
-#define pinRemoteMow 12            // remote control mower motor
-#define pinRemoteSteer 11          // remote control steering 
-#define pinRemoteSpeed 10          // remote control speed
-#define pinRemoteSwitch 52         // remote control switch
-#define pinVoltageMeasurement A7   // test pin for your own voltage measurements
-#if defined(_SAM3XA_)              // Arduino Due
-  #define pinOdometryLeft DAC0     // left odometry sensor
-  #define pinOdometryRight CANRX   // right odometry sensor  
-  #define pinReservedP46 CANTX     // reserved
-  #define pinReservedP48 DAC1      // reserved
-#else                              // Adafruit Grand Central M4 
-  #define pinOdometryLeft A12      // left odometry sensor
-  #define pinOdometryRight A14     // right odometry sensor 
-  #define pinReservedP46 A15       // reserved
-  #define pinReservedP48 A13       // reserved
+  #define pinSonarCenterTrigger 24   // ultrasonic sensor pins
+  #define pinSonarCenterEcho 22
+  #define pinSonarRightTrigger 30    
+  #define pinSonarRightEcho 32
+  #define pinSonarLeftTrigger 34         
+  #define pinSonarLeftEcho 36
+  #define pinPerimeterRight A4       // perimeter
+  #define pinDockingReflector A4     // docking IR reflector
+  #define pinPerimeterLeft A5
+
+  #define pinLED 13                  // LED
+  #define pinBuzzer 53               // Buzzer
+  #define pinTilt 35                 // Tilt sensor (required for TC-G158 board)
+  #define pinButton 51               // digital ON/OFF button
+  #define pinBatteryVoltage A2       // battery voltage sensor
+  #define pinBatterySwitch 4         // battery-OFF switch   
+  #define pinChargeVoltage A9        // charging voltage sensor
+  #define pinChargeCurrent A8        // charge current sensor
+  #define pinChargeRelay 50          // charge relay
+  #define pinRemoteMow 12            // remote control mower motor
+  #define pinRemoteSteer 11          // remote control steering 
+  #define pinRemoteSpeed 10          // remote control speed
+  #define pinRemoteSwitch 52         // remote control switch
+  #define pinVoltageMeasurement A7   // test pin for your own voltage measurements
+  #if defined(_SAM3XA_)              // Arduino Due
+    #define pinOdometryLeft DAC0     // left odometry sensor
+    #define pinOdometryRight CANRX   // right odometry sensor  
+    #define pinReservedP46 CANTX     // reserved
+    #define pinReservedP48 DAC1      // reserved
+  #else                              // Adafruit Grand Central M4 
+    #define pinOdometryLeft A12      // left odometry sensor
+    #define pinOdometryRight A14     // right odometry sensor 
+    #define pinReservedP46 A15       // reserved
+    #define pinReservedP48 A13       // reserved
+  #endif
+  #define pinLawnFrontRecv 40        // lawn sensor front receive
+  #define pinLawnFrontSend 41        // lawn sensor front sender 
+  #define pinLawnBackRecv 42         // lawn sensor back receive
+  #define pinLawnBackSend 43         // lawn sensor back sender 
+  #define pinUserSwitch1 46          // user-defined switch 1
+  #define pinUserSwitch2 47          // user-defined switch 2
+  #define pinUserSwitch3 48          // user-defined switch 3
+  #define pinRain 44                 // rain sensor
+  #define pinReservedP14 A7          // reserved
+  #define pinReservedP22 A6          // reserved
+  #define pinReservedP26 A10         // reserved
+
+  #ifndef SDCARD_SS_PIN
+    #if defined(_SAM3XA_)              // Arduino Due
+      #define SDCARD_SS_PIN pinUserSwitch1
+    #else
+      #define SDCARD_SS_PIN 4
+    #endif
+  #endif
 #endif
-#define pinLawnFrontRecv 40        // lawn sensor front receive
-#define pinLawnFrontSend 41        // lawn sensor front sender 
-#define pinLawnBackRecv 42         // lawn sensor back receive
-#define pinLawnBackSend 43         // lawn sensor back sender 
-#define pinUserSwitch1 46          // user-defined switch 1
-#define pinUserSwitch2 47          // user-defined switch 2
-#define pinUserSwitch3 48          // user-defined switch 3
-#define pinRain 44                 // rain sensor
-#define pinReservedP14 A7          // reserved
-#define pinReservedP22 A6          // reserved
-#define pinReservedP26 A10         // reserved
 
 // IMU (compass/gyro/accel): I2C  (SCL, SDA) 
 // Bluetooth: Serial2 (TX2, RX2)
@@ -538,16 +575,14 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
   #define CONSOLE udpSerial         
 #endif
 
-#ifndef SDCARD_SS_PIN
-  #if defined(_SAM3XA_)              // Arduino Due
-    #define SDCARD_SS_PIN pinUserSwitch1
-  #else
-    #define SDCARD_SS_PIN 4
-  #endif
-#endif
 
 // the following will be used by Arduino library RingBuffer.h - to verify this Arduino library file:
 // 1. Arduino IDE->File->Preferences->Click on 'preferences.txt' at the bottom
 // 2. Locate file 'packages/arduino/hardware/sam/xxxxx/cores/arduino/RingBuffer.h
   
 #define SERIAL_BUFFER_SIZE 1024
+
+#ifdef BNO055
+  #define MPU9250   // just to make mpu driver happy to compile something
+#endif
+

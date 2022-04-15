@@ -31,7 +31,7 @@
 #include "PubSubClient.h"
 
 
-#define VER "Ardumower Sunray,1.0.224"
+#define VER "Ardumower Sunray,1.0.239"
 
 enum OperationType {
       OP_IDLE,      
@@ -102,8 +102,14 @@ extern float statMowDistanceTraveled ; // meter
 extern float statTempMin;
 extern float statTempMax;
 
+extern float stanleyTrackingNormalK;
+extern float stanleyTrackingNormalP;
+extern float stanleyTrackingSlowK;
+extern float stanleyTrackingSlowP;
+
 extern unsigned long lastFixTime;
 extern float stateGroundSpeed; // m/s
+extern float lateralError; // lateral error
 
 extern WiFiEspClient client;
 extern WiFiEspServer server;

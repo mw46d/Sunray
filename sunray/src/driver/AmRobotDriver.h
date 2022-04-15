@@ -12,6 +12,8 @@
 #include "RobotDriver.h"
 
 
+#ifndef __linux__
+
 class AmRobotDriver {
   public:
     void begin();
@@ -86,5 +88,16 @@ class AmRainSensorDriver: public RainSensorDriver {
     bool isRaining;  	  		    
 };
 
+class AmLiftSensorDriver: public LiftSensorDriver {
+  public:    
+    void begin() override;
+    void run() override;
+    bool triggered() override;
+  protected:
+    unsigned long nextControlTime;
+    bool isLifted;  	  		    
+};
+
+#endif
 
 #endif

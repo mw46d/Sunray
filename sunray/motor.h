@@ -29,6 +29,7 @@ class Motor {
     bool motorLeftOverload; 
     bool motorRightOverload; 
     bool motorMowOverload; 
+    bool tractionMotorsEnabled;       
     bool enableMowMotor;
     bool odometryError;    
     unsigned long motorOverloadDuration; // accumulated duration (ms)
@@ -56,6 +57,7 @@ class Motor {
     void run();      
     void test();
     void plot();
+    void enableTractionMotors(bool enable);
     void setLinearAngularSpeed(float linear, float angular, bool useLinearRamp = true);
     void setMowState(bool switchOn);   
     void stopImmediately(bool includeMowerMotor);
@@ -64,6 +66,8 @@ class Motor {
     float motorRightRpmSet;   
     float motorLeftRpmCurr;
     float motorRightRpmCurr;
+    float motorLeftRpmCurrLP;
+    float motorRightRpmCurrLP;    
     float motorLeftRpmLast;
     float motorRightRpmLast;
     bool motorMowForwardSet; 
@@ -89,8 +93,7 @@ class Motor {
     void control();    
     bool checkFault();
     void sense();
-    void dumpOdoTicks(int seconds);
-    
+    void dumpOdoTicks(int seconds);    
 };
 
 

@@ -20,17 +20,15 @@ UBLOX::UBLOX()
 {
   debug = false;
   verbose = false;
+  useTCP = false;
+  solutionTimeout = 0;
   #ifdef GPS_DUMP
     verbose = true;
   #endif
 }
 
-/* starts the serial communication */
-void UBLOX::begin(HardwareSerial& bus,uint32_t baud)
-{	
-  CONSOLE.println("UBLOX::begin");
-  _bus = &bus;
-	_baud = baud;  
+void UBLOX::begin(){
+  CONSOLE.println("using gps driver: UBLOX");
   this->state    = GOT_NONE;
   this->msgclass = -1;
   this->msgid    = -1;
@@ -46,8 +44,33 @@ void UBLOX::begin(HardwareSerial& bus,uint32_t baud)
   this->chksumErrorCounter = 0;
   this->dgpsChecksumErrorCounter = 0;
   this->dgpsPacketCounter = 0;
+}
+
+void UBLOX::begin(Client &client, char *host, uint16_t port){
+  CONSOLE.println("UBLOX::begin tcp");
+   useTCP = true;
+  _client = &client;
+  if(!client.connect(host,port)){
+    CONSOLE.print("Cannot connect to ");
+    CONSOLE.print(host);
+    CONSOLE.print(":");
+    CONSOLE.println(port);
+  }
+  // start streaming-in
+  begin(); 
+}   
+
+
+/* starts the serial communication */
+void UBLOX::begin(HardwareSerial& bus,uint32_t baud)
+{	
+  CONSOLE.println("UBLOX::begin serial");
+  _bus = &bus;
+	_baud = baud;  
 	// begin the serial port for uBlox	
   _bus->begin(_baud);
+   // start streaming-in
+  begin(); 
   if (GPS_CONFIG){
     configure();
   }
@@ -436,7 +459,7 @@ void UBLOX::dispatchMessage() {
                   crcnt++;
                 }                    
               }
-            }                
+            }              
           }
           ravg = rsum/((float)crcnt);
           numSVdgps = crcnt;
@@ -465,7 +488,7 @@ void UBLOX::dispatchMessage() {
             CONSOLE.print("\t");
             CONSOLE.print("rmax=");
             CONSOLE.println(rmax); 
-          }              
+          }
         }
         break;
       case 0x3C: { // UBX-NAV-RELPOSNED              
@@ -564,16 +587,20 @@ long UBLOX::unpack(int offset, int size) {
  
 
 /* parse the uBlox data */
-void UBLOX::run() {
-  // read a byte from the serial port	  
-  if (!_bus->available()) {
-    return;
+void UBLOX::run()
+{
+  if (millis() > solutionTimeout){
+    //CONSOLE.println("UBLOX::solutionTimeout");
+    solution = SOL_INVALID;
+    solutionTimeout = millis() + 1000;
+    solutionAvail = true;
   }
 
-  while (_bus->available()) {
-    byte data = _bus->read();
-
-    parse(data);
+	// read a byte from the serial port	  
+  if (!_bus->available()) return;
+  while (_bus->available()) {		
+    byte data = _bus->read();        
+		parse(data);
 #ifdef GPS_DUMP
     if (data == 0xB5) {
       CONSOLE.println("\n");

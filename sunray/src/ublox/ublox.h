@@ -21,8 +21,9 @@
 
 #include "Arduino.h"				
 #include "../../gps.h"
+#include "../driver/RobotDriver.h"
 
-class UBLOX{
+class UBLOX : public GpsDriver {
   public:    
     typedef enum {
         GOT_NONE,
@@ -66,11 +67,14 @@ class UBLOX{
     uint8_t mwSecond;
     
     UBLOX();
-    void begin(HardwareSerial& bus,uint32_t baud);
-    void run();
-    bool configure();  
-    void reboot();
+    void begin(Client &client, char *host, uint16_t port) override;
+    void begin(HardwareSerial& bus,uint32_t baud) override;
+    void run() override;
+    bool configure() override;  
+    void reboot() override;
   private:
+    bool useTCP;
+    Client* _client;    
     uint32_t _baud;  	
     HardwareSerial* _bus;
     state_t state;
@@ -83,7 +87,9 @@ class UBLOX{
     char payload[2000];                                          
     bool debug;
     bool verbose;
-    
+    unsigned long solutionTimeout;    
+
+    void begin();
     void addchk(int b);
     void dispatchMessage();
     long unpack_int32(int offset);

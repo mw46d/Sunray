@@ -14,6 +14,9 @@
 
 class SerialRobotDriver {
   public:
+    int requestLeftPwm;
+    int requestRightPwm;
+    int requestMowPwm;        
     unsigned long encoderTicksLeft;
     unsigned long encoderTicksRight;
     unsigned long encoderTicksMow;
@@ -22,6 +25,10 @@ class SerialRobotDriver {
     float batteryVoltage;
     float chargeVoltage;
     float chargeCurrent;
+    float mowCurr;
+    float motorLeftCurr;
+    float motorRightCurr;
+    float batteryTemp;
     bool triggeredLeftBumper;
     bool triggeredRightBumper;
     bool triggeredLift;
@@ -31,10 +38,16 @@ class SerialRobotDriver {
     void run();
     void requestMotorPwm(int leftPwm, int rightPwm, int mowPwm);
     void requestSummary();
-  protected:
+  protected:    
     String cmd;
     String cmdResponse;
+    unsigned long nextMotorTime;    
     unsigned long nextSummaryTime;
+    unsigned long nextConsoleTime;
+    int cmdMotorCounter;
+    int cmdSummaryCounter;
+    int cmdMotorResponseCounter;
+    int cmdSummaryResponseCounter;
     void sendRequest(String s);
     void processComm();
     void processResponse(bool checkCrc);
@@ -47,7 +60,6 @@ class SerialMotorDriver: public MotorDriver {
     unsigned long lastEncoderTicksLeft;
     unsigned long lastEncoderTicksRight; 
     SerialRobotDriver &serialRobot;
-    bool started;
     SerialMotorDriver(SerialRobotDriver &sr);
     void begin() override;
     void run() override;
@@ -94,6 +106,15 @@ class SerialRainSensorDriver: public RainSensorDriver {
   public:    
     SerialRobotDriver &serialRobot;
     SerialRainSensorDriver(SerialRobotDriver &sr);    
+    void begin() override;
+    void run() override;
+    bool triggered() override;  
+};
+
+class SerialLiftSensorDriver: public LiftSensorDriver {
+  public:    
+    SerialRobotDriver &serialRobot;
+    SerialLiftSensorDriver(SerialRobotDriver &sr);    
     void begin() override;
     void run() override;
     bool triggered() override;  

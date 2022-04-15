@@ -1599,6 +1599,7 @@ bool Map::findPath(Point &src, Point &dst){
   }
 
   unsigned long nextProgressTime = 0;
+  unsigned long startTime = millis();
   CONSOLE.print("findPath (");
   CONSOLE.print(src.x());
   CONSOLE.print(",");
@@ -1771,8 +1772,10 @@ bool Map::findPath(Point &src, Point &dst){
     } 
     
     CONSOLE.print("finish nodes=");
-    CONSOLE.println(pathFinderNodes.numNodes);
-      
+    CONSOLE.print(pathFinderNodes.numNodes);
+    CONSOLE.print(" duration=");
+    CONSOLE.println(millis()-startTime);  
+
     if ((currentNode != NULL) && (distance(*currentNode->point, *end->point) < 0.02)) {
       Node *curr = currentNode;
       int nodeCount = 0;

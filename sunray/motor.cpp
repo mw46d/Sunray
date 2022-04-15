@@ -36,10 +36,12 @@ void Motor::begin() {
 
   motorLeftPID.Kp       = MOTOR_PID_KP;  // 2.0;  
   motorLeftPID.Ki       = MOTOR_PID_KI;  // 0.03; 
-  motorLeftPID.Kd       = MOTOR_PID_KD;  // 0.03; 
+  motorLeftPID.Kd       = MOTOR_PID_KD;  // 0.03;
+  motorLeftPID.reset(); 
   motorRightPID.Kp       = motorLeftPID.Kp;
   motorRightPID.Ki       = motorLeftPID.Ki;
-  motorRightPID.Kd       = motorLeftPID.Kd;		 
+  motorRightPID.Kd       = motorLeftPID.Kd;
+  motorRightPID.reset();		 
 
   robotPitch = 0;
   #ifdef MOTOR_DRIVER_BRUSHLESS
@@ -62,6 +64,7 @@ void Motor::begin() {
   resetMotorFaultCounter = 0;
   nextResetMotorFaultTime = 0;
   enableMowMotor = true;
+  tractionMotorsEnabled = true;
   
   motorLeftOverload = false;
   motorRightOverload = false;
@@ -98,10 +101,14 @@ void Motor::begin() {
   motorLeftPWMCurrLP = 0;
   motorRightPWMCurrLP=0;   
   motorMowPWMCurrLP = 0;
+  
   motorLeftRpmCurr=0;
   motorRightRpmCurr=0;
   motorLeftRpmLast = 0;
   motorRightRpmLast = 0;
+  motorLeftRpmCurrLP = 0;
+  motorRightRpmCurrLP = 0;
+  
   setLinearAngularSpeedTimeoutActive = false;  
   setLinearAngularSpeedTimeout = 0;
   motorMowSpinUpTime = 0;
@@ -245,6 +252,17 @@ void Motor::setLinearAngularSpeed(float linear, float angular, bool useLinearRam
 //   CONSOLE.println(rspeed);
 }
 
+
+void Motor::enableTractionMotors(bool enable){
+  if (enable == tractionMotorsEnabled) return;
+  if (enable)
+    CONSOLE.println("traction motors enabled");
+  else 
+    CONSOLE.println("traction motors disabled");
+  tractionMotorsEnabled = enable;
+}
+
+
 void Motor::setMowState(bool switchOn){
   if ((enableMowMotor) && (switchOn)){
     if (abs(motorMowPWMSet) > 0) return; // mowing motor already switch ON
@@ -265,6 +283,7 @@ void Motor::setMowState(bool switchOn){
    pwmSpeedOffset = 1.0; // reset Mow SpeedOffset
 }
 
+
 void Motor::stopImmediately(bool includeMowerMotor){
   linearSpeedSet = 0;
   angularSpeedSet = 0;
@@ -277,6 +296,14 @@ void Motor::stopImmediately(bool includeMowerMotor){
     motorMowPWMCurr = 0;    
   }
   speedPWM(motorLeftPWMCurr, motorRightPWMCurr, motorMowPWMCurr);
+  // reset PID
+  motorLeftPID.reset();
+  motorRightPID.reset();
+  // reset unread encoder ticks
+  int ticksLeft=0;
+  int ticksRight=0;
+  int ticksMow=0;
+  motorDriver.getMotorEncoderTicks(ticksLeft, ticksRight, ticksMow);        
 }
 
 
@@ -321,15 +348,15 @@ void Motor::run() {
   }
 
   if (nextResetMotorFaultTime == 0) {    
-    if  (   ( (abs(motorLeftPWMCurr) > 100) && (abs(motorLeftPWMCurrLP) > 100) && (abs(motorLeftRpmCurr) < 0.001))    
-        ||  ( (abs(motorRightPWMCurr) > 100) && (abs(motorRightPWMCurrLP) > 100) && (abs(motorRightRpmCurr) < 0.001))  )
+    if  (   ( (abs(motorLeftPWMCurr) > 100) && (abs(motorLeftPWMCurrLP) > 100) && (abs(motorLeftRpmCurrLP) < 0.001))    
+        ||  ( (abs(motorRightPWMCurr) > 100) && (abs(motorRightPWMCurrLP) > 100) && (abs(motorRightRpmCurrLP) < 0.001))  )
     {               
       if (!odometryError){
         // odometry error
         CONSOLE.print("ERROR: odometry error rpm=");
-        CONSOLE.print(motorLeftRpmCurr);
+        CONSOLE.print(motorLeftRpmCurrLP);
         CONSOLE.print(",");
-        CONSOLE.println(motorRightRpmCurr);     
+        CONSOLE.println(motorRightRpmCurrLP);     
         odometryError = true;
       }      
     } else odometryError = false;
@@ -375,6 +402,9 @@ void Motor::run() {
   // 20 ticksPerRevolution: @ 30 rpm => 0.5 rps => 10 ticksPerSec
   motorLeftRpmCurr = 60.0 * ( ((float)ticksLeft) / ((float)ticksPerRevolution) ) / deltaControlTimeSec;
   motorRightRpmCurr = 60.0 * ( ((float)ticksRight) / ((float)ticksPerRevolution) ) / deltaControlTimeSec;
+  float lp = 0.9; // 0.995
+  motorLeftRpmCurrLP = lp * motorLeftRpmCurrLP + (1.0-lp) * motorLeftRpmCurr;
+  motorRightRpmCurrLP = lp * motorRightRpmCurrLP + (1.0-lp) * motorRightRpmCurr;
 
   if (ticksLeft == 0) {
     motorLeftTicksZero++;
@@ -400,7 +430,9 @@ bool Motor::checkFault() {
   bool leftFault = false;
   bool rightFault = false;
   bool mowFault = false;
-  motorDriver.getMotorFaults(leftFault, rightFault, mowFault);
+  if (ENABLE_FAULT_DETECTION){    
+    motorDriver.getMotorFaults(leftFault, rightFault, mowFault);
+  }
   if (leftFault) {
     CONSOLE.println("Error: motor left fault");
     fault = true;
@@ -470,7 +502,7 @@ void Motor::sense(){
 
 
 void Motor::control(){  
-  
+    
   //########################  Set SpeedOffset if curve or manual driving is detected ############################
   
   float tempPwmSpeedOffset = pwmSpeedOffset;
@@ -488,6 +520,7 @@ void Motor::control(){
 
   //########################  Calculate PWM for left driving motor ############################
 
+  motorLeftPID.TaMax = 0.07;
   motorLeftPID.x = motorLeftRpmCurr;
   motorLeftPID.w  = tempMotorLeftRpmSet;
   motorLeftPID.y_min = -pwmMax;
@@ -500,6 +533,7 @@ void Motor::control(){
 
   //########################  Calculate PWM for right driving motor ############################
   
+  motorRightPID.TaMax = 0.07;
   motorRightPID.x = motorRightRpmCurr;
   motorRightPID.w = tempMotorRightRpmSet;
   motorRightPID.y_min = -pwmMax;
@@ -533,7 +567,27 @@ void Motor::control(){
 
   //########################  set PWM for all motors ############################
 
+  if (!tractionMotorsEnabled){
+    motorLeftPWMCurr = motorRightPWMCurr = 0;
+  }
+
   speedPWM(motorLeftPWMCurr, motorRightPWMCurr, motorMowPWMCurr);
+  /*if ((motorLeftPWMCurr != 0) || (motorRightPWMCurr != 0)){
+    CONSOLE.print("PID curr=");
+    CONSOLE.print(motorLeftRpmCurr);
+    CONSOLE.print(",");  
+    CONSOLE.print(motorRightRpmCurr);
+    CONSOLE.print(" set=");    
+    CONSOLE.print(motorLeftRpmSet);
+    CONSOLE.print(",");  
+    CONSOLE.print(motorRightRpmSet);
+    CONSOLE.print(" PWM:");
+    CONSOLE.print(motorLeftPWMCurr);
+    CONSOLE.print(",");
+    CONSOLE.print(motorRightPWMCurr);
+    CONSOLE.print(",");
+    CONSOLE.println(motorMowPWMCurr);  
+  }*/
 }
 
 
@@ -568,31 +622,35 @@ void Motor::test(){
   int pwmRight = 200; 
   bool slowdown = true;
   unsigned long stopTicks = ticksPerRevolution * 10;
+  unsigned long nextControlTime = 0;
   while (motorLeftTicks < stopTicks || motorRightTicks < stopTicks){
-    if ((slowdown) && ((motorLeftTicks + ticksPerRevolution  > stopTicks)||(motorRightTicks + ticksPerRevolution > stopTicks))){  //Letzte halbe drehung verlangsamen
-      pwmLeft = pwmRight = 20;
-      slowdown = false;
-    }    
-    if (millis() > nextInfoTime){      
-      nextInfoTime = millis() + 1000;            
-      dumpOdoTicks(seconds);
-      seconds++;      
-    }    
-    if(motorLeftTicks >= stopTicks)
-    {
-      pwmLeft = 0;
-    }  
-    if(motorRightTicks >= stopTicks)
-    {
-      pwmRight = 0;      
+    if (millis() > nextControlTime){
+      nextControlTime = millis() + 20;
+      if ((slowdown) && ((motorLeftTicks + ticksPerRevolution  > stopTicks)||(motorRightTicks + ticksPerRevolution > stopTicks))){  //Letzte halbe drehung verlangsamen
+        pwmLeft = pwmRight = 20;
+        slowdown = false;
+      }    
+      if (millis() > nextInfoTime){      
+        nextInfoTime = millis() + 1000;            
+        dumpOdoTicks(seconds);
+        seconds++;      
+      }    
+      if(motorLeftTicks >= stopTicks)
+      {
+        pwmLeft = 0;
+      }  
+      if(motorRightTicks >= stopTicks)
+      {
+        pwmRight = 0;      
+      }
+      
+      speedPWM(pwmLeft, pwmRight, 0);
+      sense();
+      //delay(50);         
+      watchdogReset();     
+      robotDriver.run();
     }
-    speedPWM(pwmLeft, pwmRight, 0);
-    sense();
-    delay(50);
-    watchdogReset();     
-    robotDriver.run();   
-  }
-  dumpOdoTicks(seconds);
+  }  
   speedPWM(0, 0, 0);
   CONSOLE.println("motor test done - please ignore any IMU/GPS errors");
 }
@@ -608,47 +666,52 @@ void Motor::plot(){
   bool forward = true;
   unsigned long nextPlotTime = 0;
   unsigned long stopTime = millis() + 30 * 1000;
+  unsigned long nextControlTime = 0;
 
   while (millis() < stopTime){   // 30 seconds...
-    int ticksLeft=0;
-    int ticksRight=0;
-    int ticksMow=0;
-    motorDriver.getMotorEncoderTicks(ticksLeft, ticksRight, ticksMow);  
-    motorLeftTicks += ticksLeft;
-    motorRightTicks += ticksRight;
+    if (millis() > nextControlTime){
+      nextControlTime = millis() + 20; 
 
-    if (millis() > nextPlotTime){ 
-      nextPlotTime = millis() + 100;
-      CONSOLE.print(pwmLeft);
-      CONSOLE.print(",");  
-      CONSOLE.print(pwmRight);
-      CONSOLE.print(",");
-      CONSOLE.print(motorLeftTicks);    
-      CONSOLE.print(",");
-      CONSOLE.print(motorRightTicks);
-      CONSOLE.println();
-      motorLeftTicks = 0;
-      motorRightTicks = 0;      
-    }
+      int ticksLeft=0;
+      int ticksRight=0;
+      int ticksMow=0;
+      motorDriver.getMotorEncoderTicks(ticksLeft, ticksRight, ticksMow);  
+      motorLeftTicks += ticksLeft;
+      motorRightTicks += ticksRight;
 
-    speedPWM(pwmLeft, pwmRight, 0);
-    if (pwmLeft >= 255){
-      forward = false; 
-    }      
-    if (pwmLeft <= -255){
-      forward = true; 
-    }          
-    if (forward){
-      pwmLeft++;
-      pwmRight++;            
-    } else {
-      pwmLeft--;
-      pwmRight--;
-    }
+      if (millis() > nextPlotTime){ 
+        nextPlotTime = millis() + 100;
+        CONSOLE.print(pwmLeft);
+        CONSOLE.print(",");  
+        CONSOLE.print(pwmRight);
+        CONSOLE.print(",");
+        CONSOLE.print(motorLeftTicks);    
+        CONSOLE.print(",");
+        CONSOLE.print(motorRightTicks);
+        CONSOLE.println();
+        motorLeftTicks = 0;
+        motorRightTicks = 0;      
+      }
+
+      speedPWM(pwmLeft, pwmRight, 0);
+      if (pwmLeft >= 255){
+        forward = false; 
+      }      
+      if (pwmLeft <= -255){
+        forward = true; 
+      }          
+      if (forward){
+        pwmLeft++;
+        pwmRight++;            
+      } else {
+        pwmLeft--;
+        pwmRight--;
+      }    
+    }  
     //sense();
     //delay(10);
     watchdogReset();     
-    robotDriver.run();   
+    robotDriver.run(); 
   }
   speedPWM(0, 0, 0);
   CONSOLE.println("motor plot done - please ignore any IMU/GPS errors");

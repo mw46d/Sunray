@@ -11,6 +11,7 @@ volatile unsigned long PPM_end_lin = 0;
 volatile unsigned long PPM_start_ang = 0;
 volatile unsigned long PPM_end_ang = 0 ;        
       
+#ifdef RCMODEL_ENABLE      
 
 void get_lin_PPM()                                                        // Interrupt Service Routine
 {
@@ -24,7 +25,12 @@ void get_ang_PPM()                                                        // Int
   else                                   PPM_end_ang = micros();  
 }
 
+#endif
+
+
 void RCModel::begin(){  
+#ifdef RCMODEL_ENABLE
+  CONSOLE.println("RCModel enabled in config");  
   lin_PPM = 0;                                            
   linearPPM = 0;                                         
   ang_PPM = 0;                                            
@@ -34,16 +40,16 @@ void RCModel::begin(){
   // R/C
   pinMode(pinRemoteSteer, INPUT);
   pinMode(pinRemoteMow, INPUT); 
-#ifdef RC_DEBUG
-  nextOutputTime = millis() + 1000;
+  #ifdef RC_DEBUG
+    nextOutputTime = millis() + 1000;
+  #endif
+#else
+  CONSOLE.println("RCModel disabled in config");  
 #endif
-  if (RCMODEL_ENABLE){
-    //attachInterrupt(digitalPinToInterrupt(pinRemoteMow), get_lin_PPM, CHANGE);// Interrupt aktivieren
-    //attachInterrupt(digitalPinToInterrupt(pinRemoteSteer), get_ang_PPM, CHANGE);// Interrupt aktivieren 
-  }
 } 
 
 void RCModel::run(){
+#ifdef RCMODEL_ENABLE
   unsigned long t = millis();
   if (!RCMODEL_ENABLE) return;
   if (t < nextControlTime) return;
@@ -96,4 +102,7 @@ void RCModel::run(){
 #endif
     motor.setLinearAngularSpeed(linearPPM, angularPPM, false);                     // R/C Signale an Motor leiten
   }
+#endif
 }
+
+
