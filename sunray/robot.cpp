@@ -99,8 +99,8 @@ String gpsSolText = ""; // current gps solution as text
 float stateX = 0;  // position-east (m)
 float stateY = 0;  // position-north (m)
 float stateDelta = 0;  // direction (rad)
-float stateRoll = -5000.0;           // Initialization marker
-float statePitch = -5000.0;          // Initialization marker
+float stateRoll = 0;
+float statePitch = 0;
 float stateDeltaGPS = 0;
 float stateDeltaIMU = 0;
 float stateGroundSpeed = 0; // m/s
@@ -179,6 +179,8 @@ unsigned long nextSaveTime = 0;
 float lastIMUYaw = 0; 
 
 bool wifiFound = false;
+char ssid[] = WIFI_SSID;      // your network SSID (name)
+char pass[] = WIFI_PASS;        // your network password
 WiFiEspServer server(80);
 bool hasClient = false;
 WiFiEspClient client;
@@ -475,7 +477,7 @@ void sensorTest(){
 }
 
 
-void startWIFI() {
+void startWIFI(){
 #ifdef __linux__
   wifiFound = true;
 #else  
@@ -491,63 +493,45 @@ void startWIFI() {
   if (res.indexOf("OK") == -1){
     CONSOLE.println("WIFI (ESP8266) not found! If the problem persist, you may need to flash your ESP to firmware 2.2.1");
     return;
-  }
-  WiFi.init(&WIFI);
+  }    
+  WiFi.init(&WIFI);  
   if (WiFi.status() == WL_NO_SHIELD) {
-    CONSOLE.println("ERROR: WiFi not present");
+    CONSOLE.println("ERROR: WiFi not present");       
     return;
-  }
-
+  }   
   wifiFound = true;
   CONSOLE.print("WiFi found! ESP8266 firmware: ");
   CONSOLE.println(WiFi.firmwareVersion());       
-#endif
-
-  if (!START_AP) {
-    int wifi_retry_count = 5;
-
-    while (status != WL_CONNECTED && wifi_retry_count > 0) {
-      CONSOLE.print("Attempting to connect to WPA SSID: ");
-      CONSOLE.println(WIFI_SSID);
-      status = WiFi.begin(WIFI_SSID, WIFI_PASS);
-      wifi_retry_count--;
-    }
-
-    if (status == WL_CONNECTED) {
-#ifdef WIFI_IP
-        IPAddress localIp(WIFI_IP);
-        WiFi.config(localIp);
-#endif
-    }
-    else {
-      CONSOLE.println("Giving up on connecting to WiFi");
-    }
-  }
-
-  if (status != WL_CONNECTED) {
-#ifndef WIFI_AP_SSID
-#define WIFI_AP_SSID WIFI_SSID
-#define WIFI_AP_PASS WIFI_PASS
-#define WIFI_AP_IP WIFI_IP
-#endif
-    CONSOLE.print("Attempting to start AP ");
-    CONSOLE.println(WIFI_AP_SSID);
-#ifdef WIFI_AP_IP
-    IPAddress localIp(WIFI_AP_IP);
-    WiFi.configAP(localIp);
-#endif
+  if (START_AP){
+    CONSOLE.print("Attempting to start AP ");  
+    CONSOLE.println(ssid);
+    // uncomment these two lines if you want to set the IP address of the AP
+    #ifdef WIFI_IP  
+      IPAddress localIp(WIFI_IP);
+      WiFi.configAP(localIp);  
+    #endif            
     // start access point
-    status = WiFi.beginAP(WIFI_AP_SSID, 10, WIFI_AP_PASS, ENC_TYPE_WPA2_PSK);
-  }
-
-  CONSOLE.print("You're connected with SSID=");
+    status = WiFi.beginAP(ssid, 10, pass, ENC_TYPE_WPA2_PSK);         
+  } else {
+    while ( status != WL_CONNECTED) {
+      CONSOLE.print("Attempting to connect to WPA SSID: ");
+      CONSOLE.println(ssid);      
+      status = WiFi.begin(ssid, pass);
+      #ifdef WIFI_IP  
+        IPAddress localIp(WIFI_IP);
+        WiFi.config(localIp);  
+      #endif
+    }    
+  } 
+  CONSOLE.print("You're connected with SSID=");    
   CONSOLE.print(WiFi.SSID());
-  CONSOLE.print(" and IP=");
-  IPAddress ip = WiFi.localIP();
-  CONSOLE.println(ip);
-#if defined(ENABLE_UDP)
-  udpSerial.beginUDP();
-#endif
+  CONSOLE.print(" and IP=");        
+  IPAddress ip = WiFi.localIP();    
+  CONSOLE.println(ip);   
+#endif         
+  #if defined(ENABLE_UDP)
+    udpSerial.beginUDP();  
+  #endif    
   if (ENABLE_SERVER){
     //server.listenOnLocalhost();
     server.begin();
@@ -556,7 +540,7 @@ void startWIFI() {
     CONSOLE.println("MQTT: enabled");
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
-  }
+  }  
 }
 
 
@@ -623,12 +607,11 @@ void readIMU(){
   unsigned long startTime = millis();
   bool avail = (imuDriver.isDataAvail());
   // check time for I2C access : if too long, there's an I2C issue and we need to restart I2C bus...
-  unsigned long duration = millis() - startTime;
-  startTime += duration;
+  unsigned long duration = millis() - startTime;    
   //CONSOLE.print("duration:");
   //CONSOLE.println(duration);  
-  if ((duration > 10) || (startTime > imuDataTimeout)) {
-    if (startTime > imuDataTimeout){
+  if ((duration > 10) || (millis() > imuDataTimeout)) {
+    if (millis() > imuDataTimeout){
       CONSOLE.println("ERROR IMU data timeout (check RTC battery if problem persists)");  
     } else {
       CONSOLE.print("ERROR IMU timeout: ");
@@ -741,6 +724,19 @@ void outputConfig(){
   #ifdef MOTOR_DRIVER_BRUSHLESS
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS");
   #endif
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_A4931
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_A4931");
+  #endif 
+  #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_A4931
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_A4931");
+  #endif 
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308");
+  #endif 
+  #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308");
+  #endif 
+  
   CONSOLE.print("MOTOR_OVERLOAD_CURRENT: ");
   CONSOLE.println(MOTOR_OVERLOAD_CURRENT);
   CONSOLE.print("USE_LINEAR_SPEED_RAMP: ");
@@ -770,7 +766,7 @@ void outputConfig(){
   CONSOLE.print("ENABLE_DYNAMIC_MOWMOTOR: ");
   CONSOLE.println(ENABLE_DYNAMIC_MOWMOTOR);
   #ifdef SONAR_INSTALLED
-    CONSOLE.println("SONAR_INSTALLED")
+    CONSOLE.println("SONAR_INSTALLED");
     CONSOLE.print("SONAR_ENABLE: ");  
     CONSOLE.println(SONAR_ENABLE);
     CONSOLE.print("SONAR_TRIGGER_OBSTACLES: ");
@@ -854,13 +850,16 @@ void start(){
   pinMan.begin();         
   // keep battery switched ON
   batteryDriver.begin();  
-  buzzer.begin();      
-  CONSOLE.begin(CONSOLE_BAUDRATE);  
-    
+  CONSOLE.begin(CONSOLE_BAUDRATE);    
+  delay(2000);
+  CONSOLE.println("First sign of life");
+  buzzer.begin();
   Wire.begin();      
   analogReadResolution(12);  // configure ADC 12 bit resolution
+  CONSOLE.println("Alive 2");
   unsigned long timeout = millis() + 2000;
   while (millis() < timeout){
+    CONSOLE.println("Alive 2a");
     if (!checkAT24C32()){
       CONSOLE.println(F("PCB not powered ON or RTC module missing"));      
       I2Creset();  
@@ -872,6 +871,7 @@ void start(){
   }  
   delay(1500);
     
+  CONSOLE.println("Alive 3");
   #if defined(ENABLE_SD)
     #ifdef __linux__
       bool res = SD.begin();

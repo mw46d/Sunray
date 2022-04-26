@@ -201,7 +201,7 @@ bool UBLOX::configure(){
       } 
       else if (idx == 2){
         // ----- USB messages (Ardumower) -----------------  
-        setValueSuccess &= configGPS.newCfgValset8(0x20910009, 10, VAL_LAYER_RAM); // CFG-MSGOUT-UBX_NAV_PVT_USB  (every 10 solutions)
+        setValueSuccess &= configGPS.newCfgValset8(0x20910009, 0, VAL_LAYER_RAM); // CFG-MSGOUT-UBX_NAV_PVT_USB    (off)
         setValueSuccess &= configGPS.addCfgValset8(0x20910090, 1); // CFG-MSGOUT-UBX_NAV_RELPOSNED_USB  (every solution)
         setValueSuccess &= configGPS.addCfgValset8(0x20910036, 1); // CFG-MSGOUT-UBX_NAV_HPPOSLLH_USB   (every solution)
         setValueSuccess &= configGPS.addCfgValset8(0x20910045, 1); // CFG-MSGOUT-UBX_NAV_VELNED_USB     (every solution)
@@ -443,7 +443,7 @@ void UBLOX::dispatchMessage() {
             bool health = ((sigFlags & 3) == 1);                                                    
             if (health){       // signal is healthy               
               if (prUsed){     // pseudorange has been used (indicates satellites will be also used for carrier correction)
-                //if (cno > 0){ } // signal has some strength (carriar-to-noise)
+                //if (cno > 0){ // signal has some strength (carriar-to-noise)
                 healthycnt++;                   
                 if (crCorrUsed){  // Carrier range corrections have been used
                   /*CONSOLE.print(sigFlags);
@@ -491,7 +491,7 @@ void UBLOX::dispatchMessage() {
           }
         }
         break;
-      case 0x3C: { // UBX-NAV-RELPOSNED              
+      case 0x3C: { // UBX-NAV-RELPOSNED
           iTOW = (unsigned long)this->unpack_int32(4);
           relPosN = ((float)this->unpack_int32(8))/100.0;
           relPosE = ((float)this->unpack_int32(12))/100.0;
@@ -532,7 +532,7 @@ void UBLOX::dispatchMessage() {
       break;
   case 0x02:
       switch (this->msgid) {
-      case 0x32: { // UBX-RXM-RTCM              
+      case 0x32: { // UBX-RXM-RTCM
           if (verbose) {
             CONSOLE.println("UBX-RXM-RTCM");
           }
@@ -608,5 +608,27 @@ void UBLOX::run()
     CONSOLE.print(data, HEX);
     CONSOLE.print(",");
 #endif
+  }
+}
+
+void UBLOX::printTimestamp() {
+  if (mwYear > 2019) {
+    uint32_t d = mwYear;
+    uint32_t t = mwHour;
+
+    d *= 100;
+    d += mwMonth;
+    d *= 100;
+    d += mwDay;
+
+    t *= 100;
+    t += mwMinute;
+    t *= 100;
+    t += mwSecond;
+
+    CONSOLE.print("GPS Date (UTC) ");
+    CONSOLE.print(d);
+    CONSOLE.print("T");
+    CONSOLE.println(t);
   }
 }

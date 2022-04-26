@@ -1076,35 +1076,9 @@ void outputConsole(){
 
     static uint32_t mwLastDatePrint = 0;
     uint32_t mwT = millis();
-    if (mwT - mwLastDatePrint >= 60 * 1000 && gps.mwYear > 2019) {
+    if (mwT - mwLastDatePrint >= 60 * 1000) {
       mwLastDatePrint = mwT;  // Every minute
-      CONSOLE.print("GPS Date (UTC) ");
-      CONSOLE.print(gps.mwYear);
-      CONSOLE.print(".");
-      if (gps.mwMonth < 10) {
-        CONSOLE.print("0");
-      }
-      CONSOLE.print(gps.mwMonth);
-      CONSOLE.print(".");
-      if (gps.mwDay < 10) {
-        CONSOLE.print("0");
-      }
-      CONSOLE.print(gps.mwDay);
-      CONSOLE.print("T");
-      if (gps.mwHour < 10) {
-        CONSOLE.print("0");
-      }
-      CONSOLE.print(gps.mwHour);
-      CONSOLE.print(":");
-      if (gps.mwMinute < 10) {
-        CONSOLE.print("0");
-      }
-      CONSOLE.print(gps.mwMinute);
-      CONSOLE.print(":");
-      if (gps.mwSecond < 10) {
-        CONSOLE.print("0");
-      }
-      CONSOLE.println(gps.mwSecond);
+      gps.printTimestamp();
     }
   }
 }

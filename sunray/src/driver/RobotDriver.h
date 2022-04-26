@@ -128,6 +128,8 @@ class GpsDriver {
     virtual bool configure() = 0; 
     // should reboot receiver
     virtual void reboot() = 0;
+    // Print a UTC timestamp (mostly for the logs)
+    virtual void printTimestamp() = 0;
 };
 
 

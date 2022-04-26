@@ -37,41 +37,13 @@ class UBLOX : public GpsDriver {
         GOT_CHKA 
 
     } state_t;    
-    
-    unsigned long iTOW;
-    int numSV;         // #signals tracked 
-    int numSVdgps;     // #signals tracked with DGPS signal
-    double lon;        // deg
-    double lat;        // deg
-    double height;     // m
-    float relPosN;     // m
-    float relPosE;     // m
-    float relPosD;     // m
-    float heading;     // rad
-    float groundSpeed; // m/s
-    float accuracy;    // m
-    float hAccuracy;   // m
-    float vAccuracy;   // m
-    SolType solution;    
-    bool solutionAvail;
-    unsigned long dgpsAge;
-    unsigned long chksumErrorCounter;
-    unsigned long dgpsChecksumErrorCounter;
-    unsigned long dgpsPacketCounter;    
-
-    uint16_t mwYear;
-    uint8_t mwMonth;
-    uint8_t mwDay;
-    uint8_t mwHour;
-    uint8_t mwMinute;
-    uint8_t mwSecond;
-    
     UBLOX();
     void begin(Client &client, char *host, uint16_t port) override;
     void begin(HardwareSerial& bus,uint32_t baud) override;
     void run() override;
     bool configure() override;  
     void reboot() override;
+    void printTimestamp() override;
   private:
     bool useTCP;
     Client* _client;    
@@ -88,6 +60,13 @@ class UBLOX : public GpsDriver {
     bool debug;
     bool verbose;
     unsigned long solutionTimeout;    
+
+    uint16_t mwYear;
+    uint8_t mwMonth;
+    uint8_t mwDay;
+    uint8_t mwHour;
+    uint8_t mwMinute;
+    uint8_t mwSecond;
 
     void begin();
     void addchk(int b);
