@@ -25,9 +25,6 @@ volatile bool leftPressed = false;
 volatile bool rightPressed = false;
 
 
-bool faultActive  = LOW; 
-bool enableActive = LOW; 
-
 
 void AmRobotDriver::begin(){
   CONSOLE.println("using robot driver: AmRobotDriver");
@@ -64,25 +61,82 @@ void OdometryRightISR(){
 }
 
 AmMotorDriver::AmMotorDriver(){
+  
+  // default values for all motor drivers (for parameters description, see AmRobotDriver.h)
+  
+  MC33926.driverName = "MC33926";
+  MC33926.forwardPwmInvert = false;
+  MC33926.forwardDirLevel = LOW;
+  MC33926.reversePwmInvert = true;
+  MC33926.reverseDirLevel = HIGH;
+  MC33926.faultActive = LOW;
+  MC33926.enableActive = HIGH;
+  MC33926.minPwmSpeed = 0;
+
+  DRV8308.driverName = "DRV8308";
+  DRV8308.forwardPwmInvert = false;
+  DRV8308.forwardDirLevel = LOW;
+  DRV8308.reversePwmInvert = false;
+  DRV8308.reverseDirLevel = HIGH;
+  DRV8308.faultActive = LOW;
+  DRV8308.enableActive = LOW;
+  DRV8308.minPwmSpeed = 2;
+
+  A4931.driverName = "A4931";
+  A4931.forwardPwmInvert = false;
+  A4931.forwardDirLevel = LOW;
+  A4931.reversePwmInvert = false;
+  A4931.reverseDirLevel = HIGH;
+  A4931.faultActive = LOW;
+  A4931.enableActive = LOW;
+  A4931.minPwmSpeed = 15;    
+
+  CUSTOM.driverName = "CUSTOM";
+  CUSTOM.forwardPwmInvert = false;
+  CUSTOM.forwardDirLevel = LOW;
+  CUSTOM.reversePwmInvert = false;
+  CUSTOM.reverseDirLevel = HIGH;
+  CUSTOM.faultActive = LOW;
+  CUSTOM.enableActive = LOW;
+  CUSTOM.minPwmSpeed = 0;
 }
     
 
-void AmMotorDriver::begin(){
-  #ifdef MOTOR_DRIVER_BRUSHLESS
-    // logic for brushless drivers
-    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: yes");
-    faultActive  = LOW; 
-    enableActive = LOW; 
+void AmMotorDriver::begin(){      
+
+  #ifdef MOTOR_DRIVER_BRUSHLESS    
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: yes");    
+
+    // NOTE: you can adjust/override default motor driver parameters here if required for a certain motor!
+    // example: mowDriverChip.minPwmSpeed = 40; 
+
+    #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308  
+      mowDriverChip = DRV8308;                         
+    #elif MOTOR_DRIVER_BRUSHLESS_MOW_A4931 
+      mowDriverChip = A4931;
+      mowDriverChip.minPwmSpeed = 40;
+    #else 
+      mowDriverChip = CUSTOM;
+    #endif
+    
+    #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308  
+      gearsDriverChip = DRV8308;                         
+    #elif MOTOR_DRIVER_BRUSHLESS_GEARS_A4931 
+      gearsDriverChip = A4931;
+    #else 
+      gearsDriverChip = CUSTOM;
+    #endif
+
   #else 
-    // logic for brushed drivers    
-    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: no");
-    faultActive  = LOW; 
-    enableActive = HIGH; 
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: no");    
+    mowDriverChip = MC33926;
+    gearsDriverChip = MC33926;
   #endif
+
 
   // left wheel motor
   pinMode(pinMotorEnable, OUTPUT);
-  digitalWrite(pinMotorEnable, enableActive);
+  digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
   pinMode(pinMotorLeftPWM, OUTPUT);
   pinMode(pinMotorLeftDir, OUTPUT);
   pinMode(pinMotorLeftSense, INPUT);
@@ -100,7 +154,7 @@ void AmMotorDriver::begin(){
   pinMode(pinMotorMowSense, INPUT);
   //pinMode(pinMotorMowRpm, INPUT);
   pinMode(pinMotorMowEnable, OUTPUT);
-  digitalWrite(pinMotorMowEnable, enableActive);
+  digitalWrite(pinMotorMowEnable, mowDriverChip.enableActive);
   pinMode(pinMotorMowFault, INPUT);
 
   // odometry
@@ -125,122 +179,69 @@ void AmMotorDriver::run(){
 }
 
 
-// brushed motor driver (MC33926)
-// Check http://forum.pololu.com/viewtopic.php?f=15&t=5272#p25031 for explanations.
+// brushed/brushless motor driver
 //(8-bit PWM=255, 10-bit PWM=1023)
-// IN1 PinPWM         IN2 PinDir
-// PWM                L     Forward
-// nPWM               H     Reverse
-void AmMotorDriver::setMC33926(int pinDir, int pinPWM, int speed) {
+// example logic:
+//   IN1 PinPWM         IN2 PinDir
+//   PWM                L     Forward
+//   PWM                H     Reverse
+
+void AmMotorDriver::setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip &chip) {
   //DEBUGLN(speed);
-  if (speed < 0) {
-    digitalWrite(pinDir, HIGH) ;
-    pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));     
+  // verhindert dass das PWM Signal 0 wird. Der Driver braucht einen kurzen Impuls um das PWM zu erkennen.
+  // Wenn der z.B. vom max. PWM Wert auf 0 bzw. das Signal auf Low geht, behält er den vorherigen Wert bei und der Motor stoppt nicht
+  if (abs(speed) < chip.minPwmSpeed) speed = chip.minPwmSpeed * sign(speed);
+  
+  if (speed < 0) {    
+    // reverse
+    digitalWrite(pinDir, chip.reverseDirLevel) ;
+    if (chip.reversePwmInvert) 
+      pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));  // nPWM (inverted pwm)
+    else 
+      pinMan.analogWrite(pinPWM, ((byte)abs(speed)));       // PWM
+
   } else {
-    digitalWrite(pinDir, LOW) ;
-    pinMan.analogWrite(pinPWM, ((byte)speed));
-  }
-}
-
-
-// brushless motor driver
-//(8-bit PWM=255, 10-bit PWM=1023)
-// IN1 PinPWM         IN2 PinDir
-// PWM                L     Forward
-// PWM                H     Reverse
-// verhindert dass das PWM Signal 0 wird. Der Driver braucht einen kurzen Impuls um das PWM zu erkennen.
-// Wenn der z.B. vom max. PWM Wert auf 0 bzw. das Signal auf Low geht, behält er den vorherigen Wert bei und der Motor stoppt nicht
-void AmMotorDriver::setBrushless(int pinDir, int pinPWM, int speed, bool isMowDriver) {
-  //DEBUGLN(speed);
-  if (isMowDriver){
-    // ----------------- mowing motor -------------
-    #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308 
-      // DRV8308
-      if (speed < 0) {
-        digitalWrite(pinDir, HIGH) ;
-        if (speed >= -2) speed = -2;                         
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      } else {
-        digitalWrite(pinDir, LOW) ;
-        if (speed <= 2) speed = 2;                           
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      }
-    #elif MOTOR_DRIVER_BRUSHLESS_MOW_A4931  // A4931 
-      if ((abs(speed) > 0) && (abs(speed) < 40)) speed = 40 * sign(speed); 
-      if (speed < 0) {
-        digitalWrite(pinDir, HIGH) ;
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      } else {
-        digitalWrite(pinDir, LOW) ;
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      }
-    #endif
-  } 
-  else {
-    // ----------- gears motor -------------------
-    #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308 
-      // DRV8308
-      if (speed < 0) {
-        digitalWrite(pinDir, HIGH) ;
-        if (speed >= -2) speed = -2;                         
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      } else {
-        digitalWrite(pinDir, LOW) ;
-        if (speed <= 2) speed = 2;                           
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      }
-    #elif MOTOR_DRIVER_BRUSHLESS_GEARS_A4931  
-      // A4931 
-      if ((abs(speed) > 0) && (abs(speed) < 15)) speed = 15 * sign(speed); 
-      if (speed < 0) {
-        digitalWrite(pinDir, HIGH) ;
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      } else {
-        digitalWrite(pinDir, LOW) ;
-        pinMan.analogWrite(pinPWM, ((byte)abs(speed)));      
-      }
-    #endif
-  }
+    // forward
+    digitalWrite(pinDir, chip.forwardDirLevel) ;
+    if (chip.forwardPwmInvert) 
+      pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));  // nPWM (inverted pwm)
+    else 
+      pinMan.analogWrite(pinPWM, ((byte)abs(speed)));       // PWM
+  }  
 }
 
     
 void AmMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){
-  #ifdef MOTOR_DRIVER_BRUSHLESS
-    setBrushless(pinMotorLeftDir, pinMotorLeftPWM, leftPwm, false);
-    setBrushless(pinMotorRightDir, pinMotorRightPWM, rightPwm, false);
-    setBrushless(pinMotorMowDir, pinMotorMowPWM, mowPwm, true);
-  #else
-    setMC33926(pinMotorLeftDir, pinMotorLeftPWM, leftPwm);
-    setMC33926(pinMotorRightDir, pinMotorRightPWM, rightPwm);
-    setMC33926(pinMotorMowDir, pinMotorMowPWM, mowPwm);
-  #endif
+  setMotorDriver(pinMotorLeftDir, pinMotorLeftPWM, leftPwm, gearsDriverChip);
+  setMotorDriver(pinMotorRightDir, pinMotorRightPWM, rightPwm, gearsDriverChip);
+  setMotorDriver(pinMotorMowDir, pinMotorMowPWM, mowPwm, mowDriverChip);
 }
 
 
 void AmMotorDriver::getMotorFaults(bool &leftFault, bool &rightFault, bool &mowFault){ 
-  if (digitalRead(pinMotorLeftFault) == faultActive) {
+  if (digitalRead(pinMotorLeftFault) == gearsDriverChip.faultActive) {
     leftFault = true;
   }
-  if  (digitalRead(pinMotorRightFault) == faultActive) {
+  if  (digitalRead(pinMotorRightFault) == gearsDriverChip.faultActive) {
     rightFault = true;
   }
-  if (digitalRead(pinMotorMowFault) == faultActive) {
+  if (digitalRead(pinMotorMowFault) == mowDriverChip.faultActive) {
     mowFault = true;
   }
 }
 
 void AmMotorDriver::resetMotorFaults(){
-  if (digitalRead(pinMotorLeftFault) == faultActive) {
-    digitalWrite(pinMotorEnable, !enableActive);
-    digitalWrite(pinMotorEnable, enableActive);
+  if (digitalRead(pinMotorLeftFault) == gearsDriverChip.faultActive) {
+    digitalWrite(pinMotorEnable, !gearsDriverChip.enableActive);
+    digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
   }
-  if  (digitalRead(pinMotorRightFault) == faultActive) {
-    digitalWrite(pinMotorEnable, !enableActive);
-    digitalWrite(pinMotorEnable, enableActive);
+  if  (digitalRead(pinMotorRightFault) == gearsDriverChip.faultActive) {
+    digitalWrite(pinMotorEnable, !gearsDriverChip.enableActive);
+    digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
   }
-  if (digitalRead(pinMotorMowFault) == faultActive) {
-    digitalWrite(pinMotorMowEnable, !enableActive);
-    digitalWrite(pinMotorMowEnable, enableActive);
+  if (digitalRead(pinMotorMowFault) == mowDriverChip.faultActive) {
+    digitalWrite(pinMotorMowEnable, !mowDriverChip.enableActive);
+    digitalWrite(pinMotorMowEnable, mowDriverChip.enableActive);
   }
 }
 

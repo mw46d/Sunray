@@ -14,12 +14,38 @@
 
 #ifndef __linux__
 
+
+// struct DriverChip defines logic levels how a motor driver works:
+// example logic:
+//   IN1 PinPWM         IN2 PinDir
+//   PWM                L     Forward
+//   nPWM               H     Reverse    
+// 1) if pwm pin is normal (PWM) or inverted (nPWM) for forward
+// 2) if pwm pin is normal (PWM) or inverted (nPWM) for reverse
+// 3) if direction pin is LOW (or HIGH) for forward
+// 4) if direction pin is LOW (or HIGH) for reverse
+// 5) if fault signal is active high (or low)
+// 6) if enable signal is active high (or low)
+// 7) if there is a minimum PWM speed to ensure (or zero)
+
+struct DriverChip {
+    char *driverName;       // name of driver (MC33926 etc.)
+    bool forwardPwmInvert;  // forward pin uses inverted pwm?
+    bool forwardDirLevel;   // forward pin level
+    bool reversePwmInvert;  // reverse pin uses inverted pwm?
+    bool reverseDirLevel;   // reverse pin level
+    bool faultActive;       // level for fault active (LOW/HIGH)
+    bool enableActive;      // level for enable active (LOW/HIGH)
+    int minPwmSpeed;        // minimum PWM speed to ensure     
+    //bool drivesMowingMotor; // drives mowing motor?    
+};
+
+
 class AmRobotDriver {
   public:
     void begin();
     void run();
 };
-
 
 
 class AmMotorDriver: public MotorDriver {
@@ -33,8 +59,13 @@ class AmMotorDriver: public MotorDriver {
     void getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent) override;
     void getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks) override;
   protected:
-    void setMC33926(int pinDir, int pinPWM, int speed);
-    void setBrushless(int pinDir, int pinPWM, int speed, bool isMowDriver);
+    DriverChip MC33926;
+    DriverChip DRV8308;
+    DriverChip A4931;
+    DriverChip CUSTOM;
+    DriverChip mowDriverChip;
+    DriverChip gearsDriverChip;
+    void setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip &chip);    
 };
 
 class AmBatteryDriver : public BatteryDriver {
