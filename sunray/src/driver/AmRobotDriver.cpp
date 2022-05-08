@@ -21,8 +21,8 @@ volatile int odomTicksRight = 0;
 volatile unsigned long motorLeftTicksTimeout = 0;
 volatile unsigned long motorRightTicksTimeout = 0;
 
-volatile bool leftPressed = false;
-volatile bool rightPressed = false;
+volatile uint32_t leftTriggeredSince = 0;
+volatile uint32_t rightTriggeredSince = 0;
 
 
 
@@ -342,27 +342,11 @@ void AmBatteryDriver::keepPowerOn(bool flag){
 
 // ------------------------------------------------------------------------------------
 void BumperLeftInterruptRoutine(){
-  bool lP = (digitalRead(pinBumperLeft) == LOW);
-
-  if (lP) {
-    leftPressed = lP;
-    leftReleaseTime = 0;
-  }
-  else {
-    leftReleaseTime = millis();
-  }
+  leftTriggeredSince = digitalRead(pinBumperLeft) == LOW ? millis() : 0;
 }
 
 void BumperRightInterruptRoutine(){
-  bool rP = (digitalRead(pinBumperRight) == LOW);
-
-  if (rP) {
-    rightPressed = rP;
-    rightReleaseTime = 0;
-  }
-  else {
-    rightReleaseTime = millis();
-  }
+  rightTriggeredSince = digitalRead(pinBumperRight) == LOW ? millis() : 0;
 }
 
 
@@ -374,32 +358,20 @@ void AmBumperDriver::begin(){
 }
 
 void AmBumperDriver::getTriggeredBumper(bool &leftBumper, bool &rightBumper){
-  leftBumper = leftPressed;
-  rightBumper = rightPressed;
+  const uint32_t now = millis();
+  leftBumper = leftTriggeredSince != 0 && (now - leftTriggeredSince) > triggerTime;
+  rightBumper = rightTriggeredSince != 0 && (now - rightTriggeredSince) > triggerTime;
 }
 
 bool AmBumperDriver::obstacle(){
-  return (leftPressed || rightPressed);
+  bool left, right;
+  getTriggeredBumper(left, right);
+
+  return left || right;
 }
-    
+
 
 void AmBumperDriver::run(){
-  unsigned long t = millis();
-  unsigned long t1;
-
-  t1 = leftReleaseTime;
-  if (t1 > 0 && t - t1 > 100 && leftPressed && t1 == leftReleaseTime) { // 0.1s 'Debouncing'
-                                                                        // somewhat strange conditions to avoid stale values
-    leftPressed = false;
-    leftReleaseTime = 0;
-  }
-
-  t1 = rightReleaseTime;
-  if (t1 > 0 && t - t1 > 100 && rightPressed && t1 == rightReleaseTime) { // 0.1s 'Debouncing'
-                                                                        // somewhat strange conditions to avoid stale values
-    rightPressed = false;
-    rightReleaseTime = 0;
-  }
 }
 
 
