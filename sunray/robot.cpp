@@ -1555,6 +1555,7 @@ void run(){
   liftDriver.run();
   motor.run();
   sonar.run();
+  bumper.run();
   maps.run();  
   rcmodel.run();
 
