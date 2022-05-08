@@ -61,6 +61,7 @@ File stateFile;
   SerialStopButtonDriver stopButton(robotDriver);
   SerialRainSensorDriver rainDriver(robotDriver);
   SerialLiftSensorDriver liftDriver(robotDriver);
+  SerialBuzzerDriver buzzerDriver(robotDriver);
 #else
   AmRobotDriver robotDriver;
   AmMotorDriver motorDriver;
@@ -69,6 +70,7 @@ File stateFile;
   AmStopButtonDriver stopButton;
   AmRainSensorDriver rainDriver;
   AmLiftSensorDriver liftDriver;
+  AmBuzzerDriver buzzerDriver;
 #endif
 Motor motor;
 Battery battery;
@@ -854,6 +856,7 @@ void start(){
   CONSOLE.begin(CONSOLE_BAUDRATE);    
   delay(2000);
   CONSOLE.println("First sign of life");
+  buzzerDriver.begin();
   buzzer.begin();
   Wire.begin();      
   analogReadResolution(12);  // configure ADC 12 bit resolution
@@ -1547,6 +1550,7 @@ void run(){
   #endif
   robotDriver.run();
   buzzer.run();
+  buzzerDriver.run();
   stopButton.run();
   battery.run();
   batteryDriver.run();

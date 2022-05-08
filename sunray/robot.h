@@ -31,7 +31,7 @@
 #include "PubSubClient.h"
 
 
-#define VER "Ardumower Sunray,1.0.242"
+#define VER "Ardumower Sunray,1.0.249"
 
 // operation types
 enum OperationType {
@@ -129,6 +129,7 @@ extern bool wifiFound;
   extern SerialBumperDriver bumper;
   extern SerialStopButtonDriver stopButton;
   extern SerialRainSensorDriver rainDriver;
+  extern SerialBuzzerDriver buzzerDriver;
 #else
   extern AmRobotDriver robotDriver;
   extern AmMotorDriver motorDriver;
@@ -136,6 +137,7 @@ extern bool wifiFound;
   extern AmBumperDriver bumper;
   extern AmStopButtonDriver stopButton;
   extern AmRainSensorDriver rainDriver;
+  extern AmBuzzerDriver buzzerDriver;
 #endif
 
 extern Motor motor;

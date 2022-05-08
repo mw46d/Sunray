@@ -27,6 +27,7 @@
 // 5) if fault signal is active high (or low)
 // 6) if enable signal is active high (or low)
 // 7) if there is a minimum PWM speed to ensure (or zero)
+// 8) the PWM frequency it can work with
 
 struct DriverChip {
     char *driverName;       // name of driver (MC33926 etc.)
@@ -34,9 +35,17 @@ struct DriverChip {
     bool forwardDirLevel;   // forward pin level
     bool reversePwmInvert;  // reverse pin uses inverted pwm?
     bool reverseDirLevel;   // reverse pin level
+    bool usePwmRamp;        // use a ramp to get to PWM value?
     bool faultActive;       // level for fault active (LOW/HIGH)
+    bool resetFaultByToggleEnable; // reset a fault by toggling enable? 
     bool enableActive;      // level for enable active (LOW/HIGH)
+    bool disableAtPwmZeroSpeed; // disable driver at PWM zero speed? (brake function)
+    bool keepPwmZeroSpeed;  // keep zero PWM value (disregard minPwmSpeed at zero speed)?    
     int minPwmSpeed;        // minimum PWM speed to ensure     
+    byte pwmFreq;           // PWM frequency (PWM_FREQ_3900 or PWM_FREQ_29300)
+    float adcVoltToAmpOfs;  // ADC voltage to amps (offset)
+    float adcVoltToAmpScale; // ADC voltage to amps (scale)
+    float adcVoltToAmpPow;   // ADC voltage to amps (power of number)   
     //bool drivesMowingMotor; // drives mowing motor?    
 };
 
@@ -59,13 +68,19 @@ class AmMotorDriver: public MotorDriver {
     void getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent) override;
     void getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks) override;
   protected:
+    int lastLeftPwm;
+    int lastRightPwm;
+    int lastMowPwm;
+    int leftSpeedSign; // current motor direction (1 or -1)
+    int rightSpeedSign; // current motor direction (1 or -1)
+    int mowSpeedSign; // current motor direction (1 or -1)
     DriverChip MC33926;
     DriverChip DRV8308;
     DriverChip A4931;
     DriverChip CUSTOM;
     DriverChip mowDriverChip;
     DriverChip gearsDriverChip;
-    void setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip &chip);    
+    void setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip &chip, int speedSign);    
 };
 
 class AmBatteryDriver : public BatteryDriver {
@@ -130,6 +145,14 @@ class AmLiftSensorDriver: public LiftSensorDriver {
   protected:
     unsigned long nextControlTime;
     bool isLifted;  	  		    
+};
+
+class AmBuzzerDriver: public BuzzerDriver {
+  public:    
+    void begin() override;
+    void run() override;
+    void noTone() override;
+    void tone(int freq) override;
 };
 
 #endif

@@ -661,16 +661,19 @@ void Motor::test(){
 void Motor::plot(){
   CONSOLE.println("motor plot - NOTE: Start Arduino IDE Tools->Serial Plotter (CTRL+SHIFT+L)");
   delay(5000);
+  CONSOLE.println("pwmLeft,pwmRight,ticksLeft,ticksRight");
   motorLeftTicks = 0;  
   motorRightTicks = 0;  
   int pwmLeft = 0;
   int pwmRight = 0; 
+  int cycles = 0;
+  int acceleration = 1;
   bool forward = true;
   unsigned long nextPlotTime = 0;
-  unsigned long stopTime = millis() + 30 * 1000;
+  unsigned long stopTime = millis() + 1 * 60 * 1000;
   unsigned long nextControlTime = 0;
 
-  while (millis() < stopTime){   // 30 seconds...
+  while (millis() < stopTime){   // 60 seconds...
     if (millis() > nextControlTime){
       nextControlTime = millis() + 20; 
 
@@ -697,18 +700,27 @@ void Motor::plot(){
 
       speedPWM(pwmLeft, pwmRight, 0);
       if (pwmLeft >= 255){
-        forward = false; 
+        forward = false;
+        cycles++; 
       }      
       if (pwmLeft <= -255){
-        forward = true; 
-      }          
+        forward = true;
+        cycles++;               
+      } 
+      if ((cycles == 2) && (pwmLeft >= 0)) {
+        if (acceleration == 1) acceleration = 20;
+          else acceleration = 1;
+        cycles = 0;
+      }         
       if (forward){
-        pwmLeft++;
-        pwmRight++;            
+        pwmLeft += acceleration;
+        pwmRight += acceleration;            
       } else {
-        pwmLeft--;
-        pwmRight--;
-      }    
+        pwmLeft -= acceleration;
+        pwmRight -= acceleration;
+      }
+      pwmLeft = min(255, max(-255, pwmLeft));
+      pwmRight = min(255, max(-255, pwmRight));          
     }  
     //sense();
     //delay(10);

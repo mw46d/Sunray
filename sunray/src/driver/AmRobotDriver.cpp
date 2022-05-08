@@ -8,8 +8,19 @@
 #include "../../config.h"
 #include "../../helper.h"
 #include "../../robot.h"
+#include "../../pinman.h"
+
 
 #ifndef __linux__
+
+#if defined(_SAM3XA_)
+  #include "../due/DueTimer.h"
+#else
+  #include "../agcm4/Adafruit_ZeroTimer.h"    // __SAMD51__
+#endif
+
+
+#define SUPER_SPIKE_ELIMINATOR 1  // advanced spike elimination  (experimental, comment out to disable)
 
 
 volatile unsigned long leftReleaseTime = 0;
@@ -21,8 +32,31 @@ volatile int odomTicksRight = 0;
 volatile unsigned long motorLeftTicksTimeout = 0;
 volatile unsigned long motorRightTicksTimeout = 0;
 
+volatile unsigned long motorLeftTransitionTime = 0;
+volatile unsigned long motorRightTransitionTime = 0;
+
+volatile float motorLeftDurationMax = 0;
+volatile float motorRightDurationMax = 0;
+
 volatile uint32_t leftTriggeredSince = 0;
 volatile uint32_t rightTriggeredSince = 0;
+
+volatile boolean tone_pin_state = false;
+
+
+void toneHandler(){  
+  digitalWrite(pinBuzzer, tone_pin_state= !tone_pin_state);  
+}
+
+
+#if defined(__SAMD51__)
+Adafruit_ZeroTimer zerotimer = Adafruit_ZeroTimer(3);
+
+void TC3_Handler() {
+  Adafruit_ZeroTimer::timerHandler(3);
+}
+#endif 
+
 
 
 
@@ -41,18 +75,34 @@ void AmRobotDriver::run(){
 
 // odometry signal change interrupt
 
-void OdometryLeftISR(){			
+void OdometryLeftISR(){			  
   if (digitalRead(pinOdometryLeft) == LOW) return;
-  if (millis() < motorLeftTicksTimeout) return; // eliminate spikes
-  motorLeftTicksTimeout = millis() + 3;    
+  if (millis() < motorLeftTicksTimeout) return; // eliminate spikes  
+  #ifdef SUPER_SPIKE_ELIMINATOR
+    unsigned long duration = millis() - motorLeftTransitionTime;
+    if (duration > 5) duration = 0;
+    motorLeftTransitionTime = millis();
+    motorLeftDurationMax = 0.7 * max(motorLeftDurationMax, ((float)duration));
+    motorLeftTicksTimeout = millis() + motorLeftDurationMax;
+  #else
+    motorLeftTicksTimeout = millis() + 1;
+  #endif
   odomTicksLeft++;    
 }
 
 void OdometryRightISR(){			
-  if (digitalRead(pinOdometryRight) == LOW) return;
+  if (digitalRead(pinOdometryRight) == LOW) return;  
   if (millis() < motorRightTicksTimeout) return; // eliminate spikes
-  motorRightTicksTimeout = millis() + 3;
-  odomTicksRight++;  
+  #ifdef SUPER_SPIKE_ELIMINATOR
+    unsigned long duration = millis() - motorRightTransitionTime;
+    if (duration > 5) duration = 0;  
+    motorRightTransitionTime = millis();
+    motorRightDurationMax = 0.7 * max(motorRightDurationMax, ((float)duration));  
+    motorRightTicksTimeout = millis() + motorRightDurationMax;
+  #else
+    motorRightTicksTimeout = millis() + 1;
+  #endif
+  odomTicksRight++;        
   
   #ifdef TEST_PIN_ODOMETRY
     testValue = !testValue;
@@ -60,45 +110,82 @@ void OdometryRightISR(){
   #endif
 }
 
+
 AmMotorDriver::AmMotorDriver(){
-  
+
   // default values for all motor drivers (for parameters description, see AmRobotDriver.h)
   
+  // MC33926 (https://www.nxp.com/docs/en/data-sheet/MC33926.pdf) - PwmFreqMax=20 khz
   MC33926.driverName = "MC33926";
   MC33926.forwardPwmInvert = false;
   MC33926.forwardDirLevel = LOW;
   MC33926.reversePwmInvert = true;
   MC33926.reverseDirLevel = HIGH;
+  MC33926.usePwmRamp = false;
   MC33926.faultActive = LOW;
+  MC33926.resetFaultByToggleEnable = true;
   MC33926.enableActive = HIGH;
+  MC33926.disableAtPwmZeroSpeed=false;  
+  MC33926.keepPwmZeroSpeed = true;
   MC33926.minPwmSpeed = 0;
+  MC33926.pwmFreq = PWM_FREQ_3900;
+  MC33926.adcVoltToAmpOfs = 0;
+  MC33926.adcVoltToAmpScale = 1.905 * 2; // ADC voltage to amp for 2 drivers connected in parallel
+  MC33926.adcVoltToAmpPow = 1.0;
 
+  // DRV8308 (https://www.ti.com/lit/ds/symlink/drv8308.pdf) - PwmFreqMax=30 khz
   DRV8308.driverName = "DRV8308";
   DRV8308.forwardPwmInvert = false;
   DRV8308.forwardDirLevel = LOW;
   DRV8308.reversePwmInvert = false;
   DRV8308.reverseDirLevel = HIGH;
+  DRV8308.usePwmRamp = false;
   DRV8308.faultActive = LOW;
+  DRV8308.resetFaultByToggleEnable = true;
   DRV8308.enableActive = LOW;
+  DRV8308.disableAtPwmZeroSpeed=false;
+  DRV8308.keepPwmZeroSpeed = false; // never go to zero PWM (driver requires a periodic signal)  
   DRV8308.minPwmSpeed = 2;
+  DRV8308.pwmFreq = PWM_FREQ_29300;
+  DRV8308.adcVoltToAmpOfs = -1.65;
+  DRV8308.adcVoltToAmpScale = 7.57; 
+  DRV8308.adcVoltToAmpPow = 1.0; 
 
+  // A4931 (https://www.allegromicro.com/en/Products/Motor-Driver-And-Interface-ICs/Brushless-DC-Motor-Drivers/~/media/Files/Datasheets/A4931-Datasheet.ashx) - PwmFreqMax=30 kHz
   A4931.driverName = "A4931";
   A4931.forwardPwmInvert = false;
-  A4931.forwardDirLevel = LOW;
+  A4931.forwardDirLevel = HIGH;
   A4931.reversePwmInvert = false;
-  A4931.reverseDirLevel = HIGH;
+  A4931.reverseDirLevel = LOW;
+  A4931.usePwmRamp = false;
   A4931.faultActive = LOW;
-  A4931.enableActive = LOW;
-  A4931.minPwmSpeed = 15;    
+  A4931.resetFaultByToggleEnable = false;
+  A4931.enableActive = LOW;  // 'enable' actually is driver brake
+  A4931.disableAtPwmZeroSpeed=false;
+  A4931.keepPwmZeroSpeed = true;  
+  A4931.minPwmSpeed = 0;    
+  A4931.pwmFreq = PWM_FREQ_29300;   
+  A4931.adcVoltToAmpOfs = -1.65;
+  A4931.adcVoltToAmpScale = 7.57;
+  A4931.adcVoltToAmpPow = 1.0; 
 
-  CUSTOM.driverName = "CUSTOM";
-  CUSTOM.forwardPwmInvert = false;
-  CUSTOM.forwardDirLevel = LOW;
-  CUSTOM.reversePwmInvert = false;
-  CUSTOM.reverseDirLevel = HIGH;
-  CUSTOM.faultActive = LOW;
-  CUSTOM.enableActive = LOW;
-  CUSTOM.minPwmSpeed = 0;
+  // your custom brushed/brushless driver (ACT-8015A, JYQD_V7.3E3, etc.)
+  CUSTOM.driverName = "CUSTOM";    // just a name for your driver
+  CUSTOM.forwardPwmInvert = false; // invert PWM signal for forward? (false or true)
+  CUSTOM.forwardDirLevel = LOW;    // logic level for forward (LOW or HIGH)
+  CUSTOM.reversePwmInvert = false; // invert PWM signal for reverse? (false or true)
+  CUSTOM.reverseDirLevel = HIGH;   // logic level for reverse (LOW or HIGH)
+  CUSTOM.usePwmRamp = false;       // use a ramp to get to PWM value?    
+  CUSTOM.faultActive = LOW;        // fault active level (LOW or HIGH)
+  CUSTOM.resetFaultByToggleEnable = false; // reset a fault by toggling enable? 
+  CUSTOM.enableActive = LOW;       // enable active level (LOW or HIGH)
+  CUSTOM.disableAtPwmZeroSpeed=false;  // disable driver at PWM zero speed? (brake function)
+  CUSTOM.keepPwmZeroSpeed = true;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
+  CUSTOM.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
+  CUSTOM.pwmFreq = PWM_FREQ_3900;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
+  CUSTOM.adcVoltToAmpOfs = 0;      // ADC voltage to amps (offset)
+  CUSTOM.adcVoltToAmpScale = 1.00; // ADC voltage to amps (scale)
+  CUSTOM.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 }
     
 
@@ -107,14 +194,18 @@ void AmMotorDriver::begin(){
   #ifdef MOTOR_DRIVER_BRUSHLESS    
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS: yes");    
 
+    // All motors (gears, mow) are assigned individual motor drivers here.
     // NOTE: you can adjust/override default motor driver parameters here if required for a certain motor!
     // example: mowDriverChip.minPwmSpeed = 40; 
 
     #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308  
-      mowDriverChip = DRV8308;                         
+      mowDriverChip = DRV8308;                          
     #elif MOTOR_DRIVER_BRUSHLESS_MOW_A4931 
       mowDriverChip = A4931;
       mowDriverChip.minPwmSpeed = 40;
+      mowDriverChip.keepPwmZeroSpeed = true;
+      mowDriverChip.disableAtPwmZeroSpeed = true;  
+      mowDriverChip.usePwmRamp = false;
     #else 
       mowDriverChip = CUSTOM;
     #endif
@@ -172,6 +263,9 @@ void AmMotorDriver::begin(){
     
 	//pinMan.setDebounce(pinOdometryLeft, 100);  // reject spikes shorter than usecs on pin
 	//pinMan.setDebounce(pinOdometryRight, 100);  // reject spikes shorter than usecs on pin	
+  
+  leftSpeedSign = rightSpeedSign = mowSpeedSign = 1;
+  lastRightPwm = lastLeftPwm = lastMowPwm = 0;
 }
 
 
@@ -186,35 +280,96 @@ void AmMotorDriver::run(){
 //   PWM                L     Forward
 //   PWM                H     Reverse
 
-void AmMotorDriver::setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip &chip) {
+void AmMotorDriver::setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip &chip, int speedSign) {
   //DEBUGLN(speed);
-  // verhindert dass das PWM Signal 0 wird. Der Driver braucht einen kurzen Impuls um das PWM zu erkennen.
-  // Wenn der z.B. vom max. PWM Wert auf 0 bzw. das Signal auf Low geht, behält er den vorherigen Wert bei und der Motor stoppt nicht
-  if (abs(speed) < chip.minPwmSpeed) speed = chip.minPwmSpeed * sign(speed);
+  bool reverse = (speedSign < 0);    
   
-  if (speed < 0) {    
+  if ((speed == 0) && (chip.keepPwmZeroSpeed)) {
+    // driver does not require periodic signal at zero speed, we can output 'silence' for zero speed    
+  } else {
+    // verhindert dass das PWM Signal 0 wird. Der Driver braucht einen kurzen Impuls um das PWM zu erkennen.
+    // Wenn der z.B. vom max. PWM Wert auf 0 bzw. das Signal auf Low geht, behält er den vorherigen Wert bei und der Motor stoppt nicht
+    if (abs(speed) < chip.minPwmSpeed) speed = chip.minPwmSpeed * speedSign;  
+  }
+  
+  if (reverse) {  
+    //CONSOLE.print("reverse ");
+    //CONSOLE.print(pinDir);
+    //CONSOLE.print(",");
+    //CONSOLE.print(pinPWM);
+    //CONSOLE.print(",");
+    //CONSOLE.println(speed);    
     // reverse
     digitalWrite(pinDir, chip.reverseDirLevel) ;
     if (chip.reversePwmInvert) 
-      pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));  // nPWM (inverted pwm)
+      pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)), chip.pwmFreq);  // nPWM (inverted pwm)
     else 
-      pinMan.analogWrite(pinPWM, ((byte)abs(speed)));       // PWM
+      pinMan.analogWrite(pinPWM, ((byte)abs(speed)), chip.pwmFreq);       // PWM
 
   } else {
+    //CONSOLE.print("forward ");
+    //CONSOLE.print(pinDir);
+    //CONSOLE.print(",");
+    //CONSOLE.print(pinPWM);
+    //CONSOLE.print(",");
+    //CONSOLE.println(speed);    
     // forward
     digitalWrite(pinDir, chip.forwardDirLevel) ;
     if (chip.forwardPwmInvert) 
-      pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)));  // nPWM (inverted pwm)
+      pinMan.analogWrite(pinPWM, 255 - ((byte)abs(speed)), chip.pwmFreq);  // nPWM (inverted pwm)
     else 
-      pinMan.analogWrite(pinPWM, ((byte)abs(speed)));       // PWM
+      pinMan.analogWrite(pinPWM, ((byte)abs(speed)), chip.pwmFreq);       // PWM
   }  
 }
-
     
-void AmMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){
-  setMotorDriver(pinMotorLeftDir, pinMotorLeftPWM, leftPwm, gearsDriverChip);
-  setMotorDriver(pinMotorRightDir, pinMotorRightPWM, rightPwm, gearsDriverChip);
-  setMotorDriver(pinMotorMowDir, pinMotorMowPWM, mowPwm, mowDriverChip);
+void AmMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){  
+  // remember speed sign during zero-transition
+  if (leftPwm < 0) leftSpeedSign = -1;
+  if (leftPwm > 0) leftSpeedSign = 1;
+  if (rightPwm < 0) rightSpeedSign = -1;
+  if (rightPwm > 0) rightSpeedSign = 1;
+  if (mowPwm < 0) mowSpeedSign = -1;
+  if (mowPwm > 0) mowSpeedSign = 1;   
+  
+  // limit pwm to ramp if required
+  if (gearsDriverChip.usePwmRamp){
+    int deltaLeftPwm = leftPwm-lastLeftPwm;
+    leftPwm = leftPwm + min(1, max(-1, deltaLeftPwm));    
+    int deltaRightPwm = rightPwm-lastRightPwm;
+    rightPwm = rightPwm + min(1, max(-1, deltaRightPwm));    
+  }
+  if (mowDriverChip.usePwmRamp){
+    int deltaMowPwm = mowPwm-lastMowPwm;
+    mowPwm = mowPwm + min(1, max(-1, deltaMowPwm));      
+  }  
+
+  // remember last PWM values
+  lastLeftPwm = leftPwm;  
+  lastRightPwm = rightPwm;
+  lastMowPwm = mowPwm;
+
+  // apply motor PWMs
+  setMotorDriver(pinMotorLeftDir, pinMotorLeftPWM, leftPwm, gearsDriverChip, leftSpeedSign);
+  setMotorDriver(pinMotorRightDir, pinMotorRightPWM, rightPwm, gearsDriverChip, rightSpeedSign);
+  setMotorDriver(pinMotorMowDir, pinMotorMowPWM, mowPwm, mowDriverChip, mowSpeedSign);
+  
+  // disable driver at zero speed (brake function)    
+  bool enableGears = gearsDriverChip.enableActive;
+  bool enableMow = mowDriverChip.enableActive;  
+  if (gearsDriverChip.disableAtPwmZeroSpeed){  
+    if ((leftPwm == 0) && (rightPwm == 0)){
+      enableGears = !gearsDriverChip.enableActive;                
+    }
+    digitalWrite(pinMotorEnable, enableGears);
+  }
+  if (mowDriverChip.disableAtPwmZeroSpeed){ 
+    if (mowPwm == 0) {
+      if (mowDriverChip.disableAtPwmZeroSpeed){
+        enableMow = !mowDriverChip.enableActive;
+      }
+    }      
+    digitalWrite(pinMotorMowEnable, enableMow);
+  }  
 }
 
 
@@ -230,34 +385,37 @@ void AmMotorDriver::getMotorFaults(bool &leftFault, bool &rightFault, bool &mowF
   }
 }
 
-void AmMotorDriver::resetMotorFaults(){
+void AmMotorDriver::resetMotorFaults(){  
   if (digitalRead(pinMotorLeftFault) == gearsDriverChip.faultActive) {
-    digitalWrite(pinMotorEnable, !gearsDriverChip.enableActive);
-    digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
+    if (gearsDriverChip.resetFaultByToggleEnable){
+      digitalWrite(pinMotorEnable, !gearsDriverChip.enableActive);
+      digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
+    }
   }
   if  (digitalRead(pinMotorRightFault) == gearsDriverChip.faultActive) {
-    digitalWrite(pinMotorEnable, !gearsDriverChip.enableActive);
-    digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
+    if (gearsDriverChip.resetFaultByToggleEnable){
+      digitalWrite(pinMotorEnable, !gearsDriverChip.enableActive);
+      digitalWrite(pinMotorEnable, gearsDriverChip.enableActive);
+    }
   }
   if (digitalRead(pinMotorMowFault) == mowDriverChip.faultActive) {
-    digitalWrite(pinMotorMowEnable, !mowDriverChip.enableActive);
-    digitalWrite(pinMotorMowEnable, mowDriverChip.enableActive);
+    if (mowDriverChip.resetFaultByToggleEnable){
+      digitalWrite(pinMotorMowEnable, !mowDriverChip.enableActive);
+      digitalWrite(pinMotorMowEnable, mowDriverChip.enableActive);
+    }
   }
 }
 
 void AmMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent){
-    float offset      = -1.65;
-    #ifdef MOTOR_DRIVER_BRUSHLESS
-      float scale       = 7.57;   // ADC voltage to amp      
-      leftCurrent = (((float)ADC2voltage(analogRead(pinMotorLeftSense))) + offset) *scale;
-      rightCurrent = (((float)ADC2voltage(analogRead(pinMotorRightSense))) + offset) *scale;
-      mowCurrent = (((float)ADC2voltage(analogRead(pinMotorMowSense))) + offset) *scale; 
-    #else
-      float scale       = 1.905;   // ADC voltage to amp      
-      leftCurrent = ((float)ADC2voltage(analogRead(pinMotorLeftSense))) *scale;
-      rightCurrent = ((float)ADC2voltage(analogRead(pinMotorRightSense))) *scale;
-      mowCurrent = ((float)ADC2voltage(analogRead(pinMotorMowSense))) *scale  *2;	          
-    #endif
+  leftCurrent = pow(
+      ((float)ADC2voltage(analogRead(pinMotorLeftSense))) + gearsDriverChip.adcVoltToAmpOfs, gearsDriverChip.adcVoltToAmpPow
+      )  * gearsDriverChip.adcVoltToAmpScale;
+  rightCurrent = pow(
+      ((float)ADC2voltage(analogRead(pinMotorRightSense))) + gearsDriverChip.adcVoltToAmpOfs, gearsDriverChip.adcVoltToAmpPow
+      )  * gearsDriverChip.adcVoltToAmpScale;
+  mowCurrent = pow(
+            ((float)ADC2voltage(analogRead(pinMotorMowSense))) + mowDriverChip.adcVoltToAmpOfs, mowDriverChip.adcVoltToAmpPow
+      )  * mowDriverChip.adcVoltToAmpScale; 
 }
 
 void AmMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks){
@@ -433,6 +591,55 @@ void AmLiftSensorDriver::run(){
 
 bool AmLiftSensorDriver::triggered(){
   return isLifted;
+}
+
+// ------------------------------------------------------------------------------------
+
+void AmBuzzerDriver::begin(){  
+  pinMode(pinBuzzer, OUTPUT);                
+  digitalWrite(pinBuzzer, LOW);
+}
+
+void AmBuzzerDriver::run(){  
+}
+
+void AmBuzzerDriver::noTone(){  
+  #ifdef _SAM3XA_
+    Timer1.stop();  
+    digitalWrite(pinBuzzer, LOW);
+  #elif __SAMD51__  // __SAMD51__
+    //::noTone(pinBuzzer);     
+    zerotimer.enable(false);
+    digitalWrite(pinBuzzer, LOW);
+  #endif     
+}
+
+void AmBuzzerDriver::tone(int freq){  
+  #ifdef _SAM3XA_
+    pinMode(pinBuzzer, OUTPUT);
+    Timer1.attachInterrupt(toneHandler).setFrequency(freq).start();   
+  #elif __SAMD51__      // __SAMD51__
+    //::tone(pinBuzzer, freq);    
+
+    // Set up the flexible divider/compare
+    uint8_t divider  = 1;
+    uint16_t compare = 0;
+    tc_clock_prescaler prescaler = TC_CLOCK_PRESCALER_DIV1;
+    
+    divider = 16;
+    prescaler = TC_CLOCK_PRESCALER_DIV16;
+    compare = (48000000/16)/freq;   
+    
+    zerotimer.enable(false);
+    zerotimer.configure(prescaler,       // prescaler
+            TC_COUNTER_SIZE_16BIT,       // bit width of timer/counter
+            TC_WAVE_GENERATION_MATCH_PWM // frequency or PWM mode
+            );
+
+    zerotimer.setCompare(0, compare);
+    zerotimer.setCallback(true, TC_CALLBACK_CC_CHANNEL0, toneHandler);
+    zerotimer.enable(true);
+  #endif     
 }
 
 #endif

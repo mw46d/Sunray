@@ -9,18 +9,11 @@
 #include "../../i2c.h"
 
 
+
 MpuDriver::MpuDriver(){    
 }
 
 void MpuDriver::selectChip(){
-  #ifdef __linux__
-    //CONSOLE.println("selecting I2C mux device 0...");
-    // select chip via TCA9548A (I2C device0)
-    //I2CwriteTo(0x70, 0, 1 << 0);
-    Wire.beginTransmission(0x70);
-    Wire.write(1 << 0);
-    Wire.endTransmission(); 
-  #endif
 }
 
 void MpuDriver::detect(){
@@ -59,7 +52,7 @@ void MpuDriver::detect(){
 
 bool MpuDriver::begin(){ 
     CONSOLE.println("using imu driver: MpuDriver");
-    selectChip();
+    //selectChip();
     if (mpu.begin() != INV_SUCCESS){
         return false;
     }
@@ -81,7 +74,7 @@ void MpuDriver::run(){
 
 
 bool MpuDriver::isDataAvail(){
-    selectChip();
+    //selectChip();
     bool avail = (mpu.fifoAvailable() > 0);    
     if (!avail) return false;
     //CONSOLE.println("fifoAvailable");
@@ -103,7 +96,7 @@ bool MpuDriver::isDataAvail(){
 }         
     
 void MpuDriver::resetData(){
-    selectChip();
+    //selectChip();
     mpu.resetFifo();
 }
 
