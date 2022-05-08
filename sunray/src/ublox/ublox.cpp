@@ -498,6 +498,7 @@ void UBLOX::dispatchMessage() {
           relPosD = ((float)this->unpack_int32(16))/100.0;              
           solution = (SolType)((this->unpack_int32(60) >> 3) & 3);              
           solutionAvail = true;
+	  solutionTimeout = millis() + 1000;
           if (verbose){
             CONSOLE.print("UBX-NAV-RELPOSNED ");
             CONSOLE.print("n=");
