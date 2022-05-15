@@ -867,6 +867,27 @@ bool Map::isUndocking(){
   return ((maps.wayMode == WAY_DOCK) && (maps.shouldMow));
 }
 
+bool Map::isDocking(){
+  return ((maps.wayMode == WAY_DOCK) && (maps.shouldDock));
+}
+
+bool Map::retryDocking(float stateX, float stateY){
+  CONSOLE.println("Map::retryDocking");    
+  if (!shouldDock) {
+    CONSOLE.println("ERROR retryDocking: not docking!");
+    return false;  
+  }  
+  if (shouldRetryDock) {
+    CONSOLE.println("ERROR retryDocking: already retrying!");   
+    return false;
+  } 
+  if (dockPointsIdx > 0) dockPointsIdx--;    
+  shouldRetryDock = true;
+  trackReverse = true;
+  return true;
+}
+
+
 bool Map::startDocking(float stateX, float stateY){
   CONSOLE.println("Map::startDocking");
   if ((memoryCorruptions != 0) || (memoryAllocErrors != 0)){
@@ -874,6 +895,7 @@ bool Map::startDocking(float stateX, float stateY){
     return false; 
   }  
   shouldDock = true;
+  shouldRetryDock = false;
   shouldMow = false;
   if (dockPoints.numPoints > 0){
     // find valid path to docking point      
@@ -907,6 +929,7 @@ bool Map::startMowing(float stateX, float stateY){
     return false; 
   }  
   shouldDock = false;
+  shouldRetryDock = false;
   shouldMow = true;    
   if (mowPoints.numPoints > 0){
     // find valid path to mowing point    
@@ -1122,9 +1145,21 @@ bool Map::nextDockPoint(bool sim){
   if (shouldDock){
     // should dock  
     if (dockPointsIdx+1 < dockPoints.numPoints){
-      if (!sim) lastTargetPoint.assign(targetPoint);
-      if (!sim) dockPointsIdx++;              
-      if (!sim) trackReverse = false;              
+      if (!sim) { 
+        lastTargetPoint.assign(targetPoint);
+        if (dockPointsIdx == 0) {
+          CONSOLE.println("nextDockPoint: shouldRetryDock=false");
+          shouldRetryDock=false;
+        }
+        if (shouldRetryDock) {
+          CONSOLE.println("nextDockPoint: shouldRetryDock=true");
+          dockPointsIdx--;
+          trackReverse = true;                    
+        } else {
+          dockPointsIdx++; 
+          trackReverse = false;                            
+        }
+      }              
       if (!sim) trackSlow = true;
       if (!sim) useGPSfixForPosEstimation = true;
       if (!sim) useGPSfixForDeltaEstimation = true;      

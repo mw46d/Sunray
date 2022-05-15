@@ -899,6 +899,10 @@ void start(){
   CONSOLE.println(BOARD);
   
   robotDriver.begin();
+  CONSOLE.print("robot id: ");
+  String rid = "";
+  robotDriver.getRobotID(rid);
+  CONSOLE.println(rid);
   motorDriver.begin();
   rainDriver.begin();
   liftDriver.begin();  
@@ -1024,7 +1028,7 @@ void computeRobotState(){
       && ((gps.solution == SOL_FIXED) || (gps.solution == SOL_FLOAT))  )
   {
     gps.solutionAvail = false;        
-    stateGroundSpeed = 0.9 * stateGroundSpeed + 0.1 * gps.groundSpeed;    
+    stateGroundSpeed = 0.9 * stateGroundSpeed + 0.1 * abs(gps.groundSpeed);    
     //CONSOLE.println(stateGroundSpeed);
     float distGPS = sqrt( sq(posN-lastPosN)+sq(posE-lastPosE) );
     if ((distGPS > 0.3) || (resetLastPos)){
@@ -1143,11 +1147,18 @@ bool robotShouldBeInMotion(){
 
 // drive reverse if robot cannot move forward
 void triggerObstacle(){
-  CONSOLE.println("triggerObstacle");    
-  statMowObstacles++;    
+  if (driveReverseStopTime != 0) return;
+  CONSOLE.println("triggerObstacle");      
+  statMowObstacles++;      
+  if (maps.isDocking()) {    
+    if (maps.retryDocking(stateX, stateY)) {
+      driveReverseStopTime = millis() + 3000;                      
+      return;
+    }
+  } 
   if ((OBSTACLE_AVOIDANCE) && (maps.wayMode != WAY_DOCK)){    
     driveReverseStopTime = millis() + 3000;      
-  } else { 
+  } else {     
     stateSensor = SENS_OBSTACLE;
     setOperation(OP_ERROR);
     buzzer.sound(SND_ERROR, true);        
@@ -1447,7 +1458,7 @@ void trackLine(){
   }
 
   if ((gps.solution == SOL_FIXED) || (gps.solution == SOL_FLOAT)){        
-    if (linear > 0.06) {
+    if (abs(linear) > 0.06) {
       if ((millis() > linearMotionStartTime + 5000) && (stateGroundSpeed < 0.03)){
         // if in linear motion and not enough ground speed => obstacle
         //if ( (GPS_SPEED_DETECTION) && (!maps.isUndocking()) ) { 
@@ -1701,11 +1712,16 @@ void run(){
               motor.stopImmediately(false); 
               detectLift();
               driveReverseStopTime = 0;
-              maps.addObstacle(stateX, stateY);
-              Point pt;
-              if (!maps.findObstacleSafeMowPoint(pt)){
-                setOperation(OP_DOCK, true); // dock if no more (valid) mowing points
-              } else setOperation(stateOp, true);    // continue current operation
+              if (maps.isDocking()){
+                CONSOLE.println("continue docking");
+                // continue without planner
+              } else {
+                maps.addObstacle(stateX, stateY);              
+                Point pt;
+                if (!maps.findObstacleSafeMowPoint(pt)){
+                  setOperation(OP_DOCK, true); // dock if no more (valid) mowing points
+                } else setOperation(stateOp, true);    // continue current operation
+              }
             }            
           } else if (driveForwardStopTime > 0){
             // rotate stuck avoidance
@@ -1766,19 +1782,18 @@ void run(){
       }      
       
       // process button state
-      if (stateButton == 1){        
-        stateButton = 0;  // reset button state
-        if ((stateOp == OP_MOW) || (stateOp == OP_DOCK)) {
-          stateSensor = SENS_STOP_BUTTON;
-          setOperation(OP_IDLE, false, true);                     
-        } else {
-          stateSensor = SENS_STOP_BUTTON;
-          setOperation(OP_MOW, false, true);
-        }      
-      } else if (stateButton == 5){
+      if (stateButton == 5){
         stateButton = 0; // reset button state
         stateSensor = SENS_STOP_BUTTON;
         setOperation(OP_DOCK, false, true);
+      } else if (stateButton == 6){ 
+          stateSensor = SENS_STOP_BUTTON;
+          setOperation(OP_MOW, false, true);
+      } else if (stateButton > 0){
+        // stateButton 1 (or unknown button state)
+        stateButton = 0;  // reset button state
+        stateSensor = SENS_STOP_BUTTON;
+        setOperation(OP_IDLE, false, true);                             
       }
       
       

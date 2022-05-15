@@ -380,6 +380,25 @@ void cmdVersion(){
   s += encryptChallenge;
   s += F(",");
   s += BOARD;
+  s += F(",");
+  #ifdef DRV_SERIAL_ROBOT
+    s += "SR";
+  #elif DRV_ARDUMOWER
+    s += "AM";
+  #else 
+    s += "XX";
+  #endif
+  String id = "";
+  String mcuFwName = "";
+  String mcuFwVer = ""; 
+  robotDriver.getRobotID(id);
+  robotDriver.getMcuFirmwareVersion(mcuFwName, mcuFwVer);
+  s += F(",");  
+  s += mcuFwName;
+  s += F(",");
+  s += mcuFwVer;
+  s += F(",");  
+  s += id;
   CONSOLE.print("sending encryptMode=");
   CONSOLE.print(encryptMode);
   CONSOLE.print(" encryptChallenge=");  
@@ -666,6 +685,33 @@ void cmdWiFiStatus(){
 }
 
 
+// request firmware update
+void cmdFirmwareUpdate(){
+  String s = F("U1");  
+  #ifdef __linux__
+    if (cmd.length()<6) return;  
+    int counter = 0;
+    int lastCommaIdx = 0;    
+    String fileURL = "";
+    for (int idx=0; idx < cmd.length(); idx++){
+      char ch = cmd[idx];
+      if ((ch == ',') || (idx == cmd.length()-1)){
+        String str = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1);
+        if (counter == 1){                            
+            fileURL = str;
+        } 
+        counter++;
+        lastCommaIdx = idx;
+      }    
+    }          
+    CONSOLE.print("applying firmware update: ");
+    CONSOLE.println(fileURL);
+    Process p;
+    p.runShellCommand("/home/pi/sunray_install/update.sh --apply --url " + fileURL + " &");
+  #endif  
+  cmdAnswer(s);
+}
+
 // process request
 void processCmd(bool checkCrc, bool decrypt){
   cmdResponse = "";      
@@ -742,6 +788,9 @@ void processCmd(bool checkCrc, bool decrypt){
     if (cmd[4] == '1') cmdWiFiScan();
     if (cmd[4] == '2') cmdWiFiSetup();   
     if (cmd[4] == '3') cmdWiFiStatus();     
+  }
+  if (cmd[3] == 'U'){ 
+    if ((cmd.length() > 4) && (cmd[4] == '1')) cmdFirmwareUpdate();
   }
   if (cmd[3] == 'G') cmdToggleGPSSolution();   // for developers
   if (cmd[3] == 'K') cmdKidnap();   // for developers

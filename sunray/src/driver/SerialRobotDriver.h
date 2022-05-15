@@ -12,15 +12,18 @@
 #include "RobotDriver.h"
 
 
-class SerialRobotDriver {
+class SerialRobotDriver: public RobotDriver {
   public:
+    String robotID;
+    String mcuFirmwareName;
+    String mcuFirmwareVersion;
     int requestLeftPwm;
     int requestRightPwm;
     int requestMowPwm;        
     unsigned long encoderTicksLeft;
     unsigned long encoderTicksRight;
     unsigned long encoderTicksMow;
-    bool receivedEncoders;
+    bool mcuCommunicationLost;
     bool motorFault;
     float batteryVoltage;
     float chargeVoltage;
@@ -28,16 +31,20 @@ class SerialRobotDriver {
     float mowCurr;
     float motorLeftCurr;
     float motorRightCurr;
+    bool resetMotorTicks;
     float batteryTemp;
     bool triggeredLeftBumper;
     bool triggeredRightBumper;
     bool triggeredLift;
     bool triggeredRain;
     bool triggeredStopButton;           
-    void begin();
-    void run();
+    void begin() override;
+    void run() override;
+    bool getRobotID(String &id) override;
+    bool getMcuFirmwareVersion(String &name, String &ver) override;
     void requestMotorPwm(int leftPwm, int rightPwm, int mowPwm);
     void requestSummary();
+    void requestVersion();
   protected:    
     String cmd;
     String cmdResponse;
@@ -53,6 +60,7 @@ class SerialRobotDriver {
     void processResponse(bool checkCrc);
     void motorResponse();
     void summaryResponse();
+    void versionResponse();
 };
 
 class SerialMotorDriver: public MotorDriver {
@@ -71,7 +79,11 @@ class SerialMotorDriver: public MotorDriver {
 };
 
 class SerialBatteryDriver : public BatteryDriver {
-  public:    
+  public:   
+    bool mcuBoardPoweredOn;
+    unsigned long nextADCTime;
+    bool adcTriggered;
+    unsigned long linuxShutdownTime;
     SerialRobotDriver &serialRobot;
     SerialBatteryDriver(SerialRobotDriver &sr);
     void begin() override;

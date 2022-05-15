@@ -23,6 +23,7 @@ void SerialRobotDriver::begin(){
   mowCurr = 0;
   motorLeftCurr = 0;
   motorRightCurr = 0;
+  resetMotorTicks = true;
   batteryTemp = 0;
   triggeredLeftBumper = false;
   triggeredRightBumper = false;
@@ -30,7 +31,7 @@ void SerialRobotDriver::begin(){
   triggeredStopButton = false;
   triggeredLift = false;
   motorFault = false;
-  receivedEncoders = false;
+  mcuCommunicationLost = true;
   nextSummaryTime = 0;
   nextConsoleTime = 0;
   nextMotorTime = 0;
@@ -39,45 +40,77 @@ void SerialRobotDriver::begin(){
   cmdMotorCounter = 0;
   cmdSummaryCounter = 0;
   requestLeftPwm = requestRightPwm = requestMowPwm = 0;
+  robotID = "XX";
 
-  #ifdef __linux__    
+  #ifdef __linux__
+    Process p;
+    p.runShellCommand("ip link show eth0 | grep link/ether | awk '{print $2}'");
+	  robotID = p.readString();    
+    robotID.trim();
+    
+    CONSOLE.println("ioboard init");
+
     // IMU power-on code (Alfred-PCB-specific) 
     // switch-on IMU via port-expander PCA9555     
-    unsigned long startTime = millis();    
     ioExpanderOut(EX1_I2C_ADDR, EX1_IMU_POWER_PORT, EX1_IMU_POWER_PIN, true);
 
     // select IMU via multiplexer TCA9548A 
     ioI2cMux(MUX_I2C_ADDR, SLAVE_IMU_MPU, true);  // Alfred dev PCB with buzzer
     ioI2cMux(MUX_I2C_ADDR, SLAVE_BUS0, true); // Alfred dev PCB without buzzer    
 
+    // select EEPROM via multiplexer TCA9548A 
+    ioI2cMux(MUX_I2C_ADDR, SLAVE_EEPROM, true);  
+
     // select ADC via multiplexer TCA9548A 
     ioI2cMux(MUX_I2C_ADDR, SLAVE_ADC, true);
-    unsigned long duration = millis() - startTime;
-    CONSOLE.print("duration ");
-    CONSOLE.println(duration);
-
+    
     // buzzer test
-    //ioExpanderOut(EX2_I2C_ADDR, EX2_BUZZER_PORT, EX2_BUZZER_PIN, true);
-    //delay(500);
-    //ioExpanderOut(EX2_I2C_ADDR, EX2_BUZZER_PORT, EX2_BUZZER_PIN, false);    
-
-    // ADC test
-    ioAdcStart(ADC_I2C_ADDR);
-
-    for (int idx=1; idx < 9; idx++){
-      ioAdcMux(idx);            
-      delay(50);
-      ioAdcTrigger(ADC_I2C_ADDR);
+    if (false){
+      ioExpanderOut(EX2_I2C_ADDR, EX2_BUZZER_PORT, EX2_BUZZER_PIN, true);
       delay(500);
-      float v = ioAdc(ADC_I2C_ADDR);
-      CONSOLE.print("S");
-      CONSOLE.print(idx);
-      CONSOLE.print("=");
-      CONSOLE.println(v);   
+      ioExpanderOut(EX2_I2C_ADDR, EX2_BUZZER_PORT, EX2_BUZZER_PIN, false);    
+    }
+
+    // start ADC
+    ioAdcStart(ADC_I2C_ADDR, false);
+
+    // ADC test    
+    if (true){    
+      for (int idx=1; idx < 9; idx++){
+        ioAdcMux(idx);            
+        ioAdcTrigger(ADC_I2C_ADDR);
+        delay(5);
+        float v = ioAdc(ADC_I2C_ADDR);
+        CONSOLE.print("ADC S");
+        CONSOLE.print(idx);
+        CONSOLE.print("=");
+        CONSOLE.println(v);   
+      }
     }    
+
+    // EEPROM test
+    if (false){
+      ioEepromWriteByte( EEPROM_I2C_ADDR, 0, 42);
+      delay(50);
+      int v = ioEepromReadByte( EEPROM_I2C_ADDR, 0);
+      CONSOLE.print("EEPROM=");
+      CONSOLE.println(v);
+    }
     
   #endif
 }
+
+bool SerialRobotDriver::getRobotID(String &id){
+  id = robotID;
+  return true;
+}
+
+bool SerialRobotDriver::getMcuFirmwareVersion(String &name, String &ver){
+  name = mcuFirmwareName;
+  ver = mcuFirmwareVersion;
+  return true;
+}
+
 
 void SerialRobotDriver::sendRequest(String s){
   byte crc = 0;
@@ -89,6 +122,13 @@ void SerialRobotDriver::sendRequest(String s){
   //CONSOLE.print(s);  
   //cmdResponse = s;
   COMM.print(s);  
+}
+
+
+void SerialRobotDriver::requestVersion(){
+  String req;
+  req += "AT+V";  
+  sendRequest(req);
 }
 
 
@@ -149,7 +189,33 @@ void SerialRobotDriver::motorResponse(){
     CONSOLE.println("STOPBUTTON");
   }
   cmdMotorResponseCounter++;
-  receivedEncoders=true;
+  mcuCommunicationLost=false;
+}
+
+
+void SerialRobotDriver::versionResponse(){
+  if (cmd.length()<6) return;  
+  int counter = 0;
+  int lastCommaIdx = 0;
+  for (int idx=0; idx < cmd.length(); idx++){
+    char ch = cmd[idx];
+    //Serial.print("ch=");
+    //Serial.println(ch);
+    if ((ch == ',') || (idx == cmd.length()-1)){
+      String s = cmd.substring(lastCommaIdx+1, ch==',' ? idx : idx+1);
+      if (counter == 1){                            
+        mcuFirmwareName = s;
+      } else if (counter == 2){
+        mcuFirmwareVersion = s;
+      } 
+      counter++;
+      lastCommaIdx = idx;
+    }    
+  }
+  CONSOLE.print("MCU FIRMWARE: ");
+  CONSOLE.print(mcuFirmwareName);
+  CONSOLE.print(",");
+  CONSOLE.println(mcuFirmwareVersion);
 }
 
 
@@ -236,6 +302,7 @@ void SerialRobotDriver::processResponse(bool checkCrc){
   }     
   if (cmd[0] == 'M') motorResponse();
   if (cmd[0] == 'S') summaryResponse();
+  if (cmd[0] == 'V') versionResponse();
 }
 
 
@@ -259,7 +326,7 @@ void SerialRobotDriver::processComm(){
 }
 
 
-void SerialRobotDriver::run(){
+void SerialRobotDriver::run(){  
   processComm();
   if (millis() > nextMotorTime){
     nextMotorTime = millis() + 20; // 50 hz
@@ -270,7 +337,17 @@ void SerialRobotDriver::run(){
     requestSummary();
   }
   if (millis() > nextConsoleTime){
-    nextConsoleTime = millis() + 1000;
+    nextConsoleTime = millis() + 1000;    
+    if (!mcuCommunicationLost){
+      if (mcuFirmwareName == ""){
+        requestVersion();
+      }
+    }    
+    if (cmdMotorResponseCounter == 0){
+      CONSOLE.println("WARN: resetting motor ticks");
+      resetMotorTicks = true;
+      mcuCommunicationLost = true;
+    }    
     if ( (cmdMotorResponseCounter < 30) || (cmdSummaryResponseCounter == 0) ){
       CONSOLE.print("WARN: SerialRobot unmet communication frequency: motorFreq=");
       CONSOLE.print(cmdMotorCounter);
@@ -340,6 +417,17 @@ void SerialMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent,
 }
 
 void SerialMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks){
+  if (serialRobot.mcuCommunicationLost) {
+    //CONSOLE.println("getMotorEncoderTicks: no ticks!");    
+    leftTicks = rightTicks = 0; mowTicks = 0;
+    return;
+  }
+  if (serialRobot.resetMotorTicks){
+    serialRobot.resetMotorTicks = false;
+    //CONSOLE.println("getMotorEncoderTicks: resetMotorTicks");
+    lastEncoderTicksLeft = serialRobot.encoderTicksLeft;
+    lastEncoderTicksRight = serialRobot.encoderTicksRight; 
+  }
   leftTicks = serialRobot.encoderTicksLeft - lastEncoderTicksLeft;
   rightTicks = serialRobot.encoderTicksRight - lastEncoderTicksRight;
   if (leftTicks > 1000){
@@ -357,6 +445,10 @@ void SerialMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, in
 // ------------------------------------------------------------------------------------
 
 SerialBatteryDriver::SerialBatteryDriver(SerialRobotDriver &sr) : serialRobot(sr){
+  mcuBoardPoweredOn = true;
+  nextADCTime = 0;
+  adcTriggered = false;
+  linuxShutdownTime = 0;
 }
 
 void SerialBatteryDriver::begin(){
@@ -366,6 +458,37 @@ void SerialBatteryDriver::run(){
 }    
 
 float SerialBatteryDriver::getBatteryVoltage(){
+  #ifdef __linux__
+    // detect if MCU PCB is switched-off
+    if (millis() > nextADCTime){
+      if (!adcTriggered){
+        // trigger ADC measurement (mcuAna)
+        ioAdcMux(ADC_MCU_ANA);
+        ioAdcTrigger(ADC_I2C_ADDR);   
+        adcTriggered = true; 
+        nextADCTime = millis() + 5;    
+      } else {           
+        nextADCTime = millis() + 1000;
+        adcTriggered = false;
+        float v = ioAdc(ADC_I2C_ADDR);
+        mcuBoardPoweredOn = true;
+        if (v < 0){
+          CONSOLE.println("ERROR reading ADC channel mcuAna!");
+        } else {
+          if ((v >0) && (v < 0.8)){
+            // no mcuAna, MCU PCB is probably switched off
+            CONSOLE.print("mcuAna=");
+            CONSOLE.println(v);      
+            CONSOLE.println("MCU PCB powered OFF!");
+            mcuBoardPoweredOn = false;        
+          }
+        }
+      }
+    }    
+    if (serialRobot.mcuCommunicationLost){      
+      if (!mcuBoardPoweredOn) return 0; // return zero volt if MCU PCB is switched-off (so we will be later requested to shutdown)
+    }
+  #endif         
   return serialRobot.batteryVoltage;
 }
 
@@ -380,7 +503,27 @@ float SerialBatteryDriver::getChargeCurrent(){
 void SerialBatteryDriver::enableCharging(bool flag){
 }
 
+
 void SerialBatteryDriver::keepPowerOn(bool flag){
+  #ifdef __linux__
+    if (flag){
+      // keep power on
+      linuxShutdownTime = 0;
+    } else {
+      // shutdown linux - request could be for two reasons:
+      // 1. battery voltage sent by MUC-PCB seem to be too low 
+      // 2. MCU-PCB is powered-off 
+      if (linuxShutdownTime == 0){
+        linuxShutdownTime = millis() + 5000; // some timeout 
+      }
+      if (millis() > linuxShutdownTime){
+        linuxShutdownTime = millis() + 10000; // re-trigger linux command after 10 secs
+        CONSOLE.println("LINUX will SHUTDOWN!");
+        Process p;
+        p.runShellCommand("shutdown now");
+      }
+    }   
+  #endif  
 }
 
 

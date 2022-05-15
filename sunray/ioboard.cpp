@@ -91,24 +91,27 @@ void ioAdcMux(uint8_t adc){
 
 
 // configure ADC MCP3421
-float ioAdcStart(uint8_t addr){ 
+float ioAdcStart(uint8_t addr, bool repeatMode){ 
   // send config  
   Config cfg;
   cfg.reg      = 0x00;
   cfg.bit.GAIN = eGain_x1;
-  cfg.bit.SR   = eSR_18Bit;
-  cfg.bit.OC   = 0; // 1=repeat, 0=single shot
+  cfg.bit.SR   = eSR_12Bit;
+  if (repeatMode)
+    cfg.bit.OC = 1;  // 1=repeat, 0=single shot
+  else 
+    cfg.bit.OC = 0;
   Wire.beginTransmission(addr); // MCP3421 address   
   Wire.write(cfg.reg);   // config register 
   Wire.endTransmission();
 }
 
-// trigger an ADC conversion (MCP3421)
+// trigger a single ADC conversion (MCP3421)
 void ioAdcTrigger(uint8_t addr){
   Config cfg;
   cfg.reg      = 0x00;
   cfg.bit.GAIN = eGain_x1;
-  cfg.bit.SR   = eSR_18Bit;
+  cfg.bit.SR   = eSR_12Bit;
   cfg.bit.OC   = 0; // 1=repeat, 0=single shot  
   cfg.bit.RDY = 1;  // trigger conversion
   Wire.beginTransmission(addr); // MCP3421 address   
@@ -121,7 +124,7 @@ void ioAdcTrigger(uint8_t addr){
 float ioAdc(uint8_t addr){
 
   uint8_t u8Data;
-  uint8_t u8Len = 4;
+  uint8_t u8Len = 3;
 
   //unsigned long startTime = millis();                
   if ((u8Len != Wire.requestFrom(addr, u8Len)) ||
@@ -152,6 +155,40 @@ float ioAdc(uint8_t addr){
     CONSOLE.println(cfg.reg, BIN);  
     return -1;
   }    
-  return ((float)s32Value) / 262143.0 * 2.048;
+  return ((float)s32Value) / 2048.0 * 2.048;
 }
   
+
+// read eeprom byte (BL24C256A)
+byte ioEepromReadByte( uint8_t addr, unsigned int eeaddress ) {
+  byte rdata = 0xFF;
+  Wire.beginTransmission(addr);
+  Wire.write((int)(eeaddress >> 8)); // MSB
+  Wire.write((int)(eeaddress & 0xFF)); // LSB
+  Wire.endTransmission();
+  Wire.requestFrom(addr,1);
+  if (Wire.available()) rdata = Wire.read();
+  return rdata;
+}
+
+// write eeprom byte (BL24C256A)
+void ioEepromWriteByte( uint8_t addr, unsigned int eeaddress, byte data ) {
+  Wire.beginTransmission(addr);
+  Wire.write((int)(eeaddress >> 8)); // MSB
+  Wire.write((int)(eeaddress & 0xFF)); // LSB
+  Wire.write(data);
+  Wire.endTransmission();
+}
+
+// write eeprom page (BL24C256A)
+void ioEepromWritePage( uint8_t addr, unsigned int eeaddresspage, byte* data, byte length ) {
+  Wire.beginTransmission(addr);
+  Wire.write((int)(eeaddresspage >> 8)); // MSB
+  Wire.write((int)(eeaddresspage & 0xFF)); // LSB
+  byte c;
+  for ( c = 0; c < length; c++)
+    Wire.write(data[c]);
+  Wire.endTransmission();
+}
+
+
