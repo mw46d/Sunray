@@ -48,7 +48,9 @@ const signed char orientationMatrix[9] = {
 };
 
 File stateFile;
-#ifdef BNO055
+#ifdef DRV_SIM_ROBOT
+  SimImuDriver imuDriver(robotDriver);
+#elif BNO055
   BnoDriver imuDriver;  
 #else
   MpuDriver imuDriver;
@@ -62,6 +64,15 @@ File stateFile;
   SerialRainSensorDriver rainDriver(robotDriver);
   SerialLiftSensorDriver liftDriver(robotDriver);
   SerialBuzzerDriver buzzerDriver(robotDriver);
+#elif DRV_SIM_ROBOT
+  SimRobotDriver robotDriver;
+  SimMotorDriver motorDriver(robotDriver);
+  SimBatteryDriver batteryDriver(robotDriver);
+  SimBumperDriver bumper(robotDriver);
+  SimStopButtonDriver stopButton(robotDriver);
+  SimRainSensorDriver rainDriver(robotDriver);
+  SimLiftSensorDriver liftDriver(robotDriver);
+  SimBuzzerDriver buzzerDriver(robotDriver);
 #else
   AmRobotDriver robotDriver;
   AmMotorDriver motorDriver;
@@ -75,7 +86,9 @@ File stateFile;
 Motor motor;
 Battery battery;
 PinManager pinMan;
-#ifdef GPS_SKYTRAQ
+#ifdef DRV_SIM_ROBOT
+  SimGpsDriver gps(robotDriver);
+#elif GPS_SKYTRAQ
   SKYTRAQ gps;
 #else 
   UBLOX gps;
@@ -1710,12 +1723,13 @@ void run(){
             if (millis() > driveReverseStopTime){
               CONSOLE.println("driveReverseStopTime");
               motor.stopImmediately(false); 
-              detectLift();
               driveReverseStopTime = 0;
+              if (detectLift()) return;              
               if (maps.isDocking()){
                 CONSOLE.println("continue docking");
                 // continue without planner
               } else {
+                CONSOLE.println("continue operation with virtual obstacle");
                 maps.addObstacle(stateX, stateY);              
                 Point pt;
                 if (!maps.findObstacleSafeMowPoint(pt)){
@@ -1751,21 +1765,22 @@ void run(){
           stateSensor = SENS_BAT_UNDERVOLTAGE;
           setOperation(OP_IDLE);
           //buzzer.sound(SND_OVERCURRENT, true);        
-        } 
-        if (battery.shouldGoHome()){
-          if (DOCKING_STATION){
-            setOperation(OP_DOCK);
-          }
-        }
-        if (RAIN_ENABLE){
-          if (rainDriver.triggered()){
-            if (DOCKING_STATION){
-              stateSensor = SENS_RAIN;
-              dockReasonRainTriggered = true;
-              setOperation(OP_DOCK);              
+        } else {
+          if (RAIN_ENABLE){
+            if (rainDriver.triggered()){
+              if (DOCKING_STATION){
+                stateSensor = SENS_RAIN;
+                dockReasonRainTriggered = true;
+                setOperation(OP_DOCK);              
+              }
             }
           }
-        }        
+          if (battery.shouldGoHome()){
+            if (DOCKING_STATION){
+              setOperation(OP_DOCK);
+            }
+          }
+        }                         
       }
       else if (stateOp == OP_CHARGE){      
         if (battery.chargerConnected()){
@@ -1787,10 +1802,12 @@ void run(){
         stateSensor = SENS_STOP_BUTTON;
         setOperation(OP_DOCK, false, true);
       } else if (stateButton == 6){ 
-          stateSensor = SENS_STOP_BUTTON;
-          setOperation(OP_MOW, false, true);
-      } else if (stateButton > 0){
-        // stateButton 1 (or unknown button state)
+        stateButton = 0; // reset button state        
+        stateSensor = SENS_STOP_BUTTON;
+        setOperation(OP_MOW, false, true);
+      } 
+      //else if (stateButton > 0){  // stateButton 1 (or unknown button state)        
+      else if (stateButton == 1){  // stateButton 1                   
         stateButton = 0;  // reset button state
         stateSensor = SENS_STOP_BUTTON;
         setOperation(OP_IDLE, false, true);                             

@@ -15,7 +15,7 @@
 enum WayType {WAY_PERIMETER, WAY_EXCLUSION, WAY_DOCK, WAY_MOW, WAY_FREE};
 typedef enum WayType WayType;
 
-
+// a point on the map
 class Point
 {
   public:
@@ -33,7 +33,7 @@ class Point
     bool write(File &file);
 };
 
-
+// a closed loop of points
 class Polygon
 {
   public:
@@ -51,6 +51,7 @@ class Polygon
     bool write(File &file);
 };
 
+// a list of polygons
 class PolygonList // owns polygons!
 {
    public:
@@ -85,7 +86,7 @@ class Node   // nodes just hold references to points and other nodes
     void dealloc();
 };
 
-
+// a list of nodes
 class NodeList  // owns nodes!
 {
   public:
@@ -157,13 +158,26 @@ class Map
         
     void begin();    
     void run();    
+
+    // --------mapping ----------------------------------
     // set point coordinate
     bool setPoint(int idx, float x, float y);    
     // set number points for waytype
     bool setWayCount(WayType type, int count);
     // set number points for exclusion 
     bool setExclusionLength(int idx, int len);
-    // choose progress (0..100%) in mowing point list
+    void clearMap();
+    void dump();    
+    bool load();
+    bool save();
+    void stressTest();
+    long calcMapCRC();
+
+    // -------mowing operation--------------------------------------
+    bool startMowing(float stateX, float stateY);    
+    bool mowingCompleted();    
+    bool findObstacleSafeMowPoint(Point &findPathToPoint);    
+    // choose progress (0..100%) in mowing point list    
     void setMowingPointPercent(float perc);
     // skip next mowing point
     void skipNextMowingPoint();
@@ -180,22 +194,18 @@ class Map
     bool nextPointIsStraight();
     // set robot state position to docking position
     void setRobotStatePosToDockingPos(float &x, float &y, float &delta);
+    
+    // ------docking------------------------------------------
     void setIsDocked(bool flag);
     bool isUndocking();
     bool isDocking();
     bool startDocking(float stateX, float stateY);
     bool retryDocking(float stateX, float stateY);
-    bool startMowing(float stateX, float stateY);
-    bool addObstacle(float stateX, float stateY);
-    bool mowingCompleted();
-    bool findObstacleSafeMowPoint(Point &findPathToPoint);
+    
+    // -----virtual obstacles----------------------------------
+    bool addObstacle(float stateX, float stateY);    
     void clearObstacles();
-    void clearMap();
-    void dump();    
-    bool load();
-    bool save();
-    void stressTest();
-    long calcMapCRC();
+    
   private:
     void finishedUploadingMap();
     void checkMemoryErrors();

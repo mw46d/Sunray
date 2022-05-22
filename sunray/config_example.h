@@ -59,6 +59,7 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 
 //#define DRV_SERIAL_ROBOT  1
 #define DRV_ARDUMOWER     1   // keep this for Ardumower
+//#define DRV_SIM_ROBOT     1   // simulation
 
 
 // ------- Bluetooth4.0/BLE module -----------------------------------
@@ -144,9 +145,10 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 //#define MOTOR_DRIVER_BRUSHLESS   1     // uncomment this for new brushless motor drivers
 //#define MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308  1 // uncomment for brushless DRV8308 driver and mowing motor 
 //#define MOTOR_DRIVER_BRUSHLESS_MOW_A4931  1    // uncomment for brushless A3931 driver and mowing motor
+//#define MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A 1  // uncomment for brushless BLDC8015A driver and mowing motor
 //#define MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308  1   // uncomment for brushless DRV8308 driver and gear/traction motors 
-//#define MOTOR_DRIVER_BRUSHLESS_GEARS_A4931  1   // uncomment for brushless A4931 driver and gear/traction motors
-
+//#define MOTOR_DRIVER_BRUSHLESS_GEARS_A4931  1    // uncomment for brushless A4931 driver and gear/traction motors
+//#define MOTOR_DRIVER_BRUSHLESS_GEARS_BLDC8015A 1   // uncomment for brushless BLDC8015A driver and gear/traction motors
 
 #define MOTOR_OVERLOAD_CURRENT 0.8    // gear motors overload current (amps)
 

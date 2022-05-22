@@ -13,6 +13,7 @@
 #include "config.h"
 #include "src/driver/AmRobotDriver.h"
 #include "src/driver/SerialRobotDriver.h"
+#include "src/driver/SimRobotDriver.h"
 #include "battery.h"
 #include "ble.h"
 #include "pinman.h"
@@ -31,7 +32,7 @@
 #include "PubSubClient.h"
 
 
-#define VER "Sunray,1.0.252"
+#define VER "Sunray,1.0.259"
 
 // operation types
 enum OperationType {
@@ -130,6 +131,14 @@ extern bool wifiFound;
   extern SerialStopButtonDriver stopButton;
   extern SerialRainSensorDriver rainDriver;
   extern SerialBuzzerDriver buzzerDriver;
+#elif DRV_SIM_ROBOT
+  extern SimRobotDriver robotDriver;
+  extern SimMotorDriver motorDriver;
+  extern SimBatteryDriver batteryDriver;
+  extern SimBumperDriver bumper;
+  extern SimStopButtonDriver stopButton;
+  extern SimRainSensorDriver rainDriver;
+  extern SimBuzzerDriver buzzerDriver;
 #else
   extern AmRobotDriver robotDriver;
   extern AmMotorDriver motorDriver;
@@ -148,7 +157,9 @@ extern Sonar sonar;
 extern VL53L0X tof;
 extern PinManager pinMan;
 extern Map maps;
-#ifdef GPS_SKYTRAQ
+#ifdef DRV_SIM_ROBOT
+  extern SimGpsDriver gps;
+#elif GPS_SKYTRAQ
   extern SKYTRAQ gps;
 #else
   extern UBLOX gps;

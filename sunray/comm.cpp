@@ -11,8 +11,12 @@
 #endif
 #include "RingBuffer.h"
 
+//#define VERBOSE 1
+
 unsigned long nextInfoTime = 0;
 bool triggerWatchdog = false;
+bool bleConnected = false;
+unsigned long bleConnectedTimeout = 0;
 
 int encryptMode = 0; // 0=off, 1=encrypt
 int encryptPass = PASS; 
@@ -210,7 +214,8 @@ void cmdSensorTest(){
 }
 
 
-// request waypoint
+// request waypoint (perim,excl,dock,mow,free)
+// W,startidx,x,y,x,y,x,y,x,y,...
 void cmdWaypoint(){
   if (cmd.length()<6) return;
   int counter = 0;
@@ -264,6 +269,7 @@ void cmdWaypoint(){
 
 
 // request waypoints count
+// N,#peri,#excl,#dock,#mow,#free
 void cmdWayCount(){
   if (cmd.length()<6) return;
   int counter = 0;
@@ -297,6 +303,7 @@ void cmdWayCount(){
 
 
 // request exclusion count
+// X,startidx,cnt,cnt,cnt,cnt,...
 void cmdExclusionCount(){
   if (cmd.length()<6) return;
   int counter = 0;
@@ -730,8 +737,10 @@ void processCmd(bool checkCrc, bool decrypt){
             cmd[i] = char(code);  
           }
         }
-        CONSOLE.print("decrypt:");
-        CONSOLE.println(cmd);
+        #ifdef VERBOSE
+          CONSOLE.print("decrypt:");
+          CONSOLE.println(cmd);
+        #endif
       }
     } 
   }
@@ -740,7 +749,7 @@ void processCmd(bool checkCrc, bool decrypt){
   int idx = cmd.lastIndexOf(',');
   if (idx < 1){
     if (checkCrc){
-      CONSOLE.println("CRC ERROR");
+      CONSOLE.println("COMM CRC ERROR");
       return;
     }
   } else {
@@ -830,6 +839,8 @@ void processBLE(){
   char ch;
   if (BLE.available()){
     battery.resetIdle();  
+    bleConnected = true;
+    bleConnectedTimeout = millis() + 5000;
     while ( BLE.available() ){    
       ch = BLE.read();      
       if ((ch == '\r') || (ch == '\n')) {   
@@ -841,6 +852,10 @@ void processBLE(){
       } else if (cmd.length() < 500){
         cmd += ch;
       }
+    }    
+  } else {
+    if (millis() > bleConnectedTimeout){
+      bleConnected = false;
     }
   }
 }
@@ -924,7 +939,9 @@ void processWifiAppServer()
   if (client){
     if (stopClientTime != 0) {
       if (millis() > stopClientTime){
-        CONSOLE.println("app stopping client");
+        #ifdef VERBOSE 
+          CONSOLE.println("app stopping client");
+        #endif
         client.stop();
         stopClientTime = 0;                   
       }
@@ -936,7 +953,9 @@ void processWifiAppServer()
     client = server.available();      
   }
   if (client) {                               // if you get a client,
-    CONSOLE.println("New client");             // print a message out the serial port
+    #ifdef VERBOSE
+      CONSOLE.println("New client");             // print a message out the serial port
+    #endif
     battery.resetIdle();
     buf.init();                               // initialize the circular buffer
     unsigned long timeout = millis() + 50;
@@ -955,8 +974,10 @@ void processWifiAppServer()
             cmd = cmd + ch;
             gps.run();
           }
-          CONSOLE.print("WIF:");
-          CONSOLE.println(cmd);
+          #ifdef VERBOSE
+            CONSOLE.print("WIF:");
+            CONSOLE.println(cmd);
+          #endif
           if (client.connected()) {
             processCmd(true,true);
             client.print(
@@ -1053,9 +1074,11 @@ void processWifiMqttClient()
 void processComm(){
   processConsole();     
   processBLE();     
-  processWifiAppServer();
-  processWifiRelayClient();
-  processWifiMqttClient();
+  if (!bleConnected){
+    processWifiAppServer();
+    processWifiRelayClient();
+    processWifiMqttClient();
+  }
   if (triggerWatchdog) {
     CONSOLE.println("hang test - watchdog should trigger and perform a reset");
     while (true){
