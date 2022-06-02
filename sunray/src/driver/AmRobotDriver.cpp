@@ -4,14 +4,15 @@
 // or Grau GmbH Commercial License for commercial use (http://grauonline.de/cms2/?page_id=153)
 
 
+#ifndef __linux__
+
 #include "AmRobotDriver.h"
 #include "../../config.h"
 #include "../../helper.h"
 #include "../../robot.h"
 #include "../../pinman.h"
-
-
-#ifndef __linux__
+#include "../../cpu.h"
+#include "../../ArduinoUniqueID.h"
 
 #if defined(_SAM3XA_)
   #include "../due/DueTimer.h"
@@ -71,7 +72,13 @@ void AmRobotDriver::run(){
 
 
 bool AmRobotDriver::getRobotID(String &id){
-  id = "XX";
+  id = "";
+  for(size_t i = 0; i < UniqueIDsize; i++){
+      byte v = UniqueID[i];
+      if (v <= 0xF) id += F("0");
+      id += String(v, HEX);  
+      if (i + 1 < UniqueIDsize) id += ":";
+  }
   return true;
 }
 
@@ -79,6 +86,10 @@ bool AmRobotDriver::getMcuFirmwareVersion(String &name, String &ver){
   name = "XX";
   ver = "XX";
   return true;
+}
+
+float AmRobotDriver::getCpuTemperature(){
+  return GetCPUTemperature();  
 }
 
 
@@ -199,6 +210,24 @@ AmMotorDriver::AmMotorDriver(){
   BLDC8015A.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   BLDC8015A.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 
+  // JYQD brushless driver 
+  JYQD.driverName = "JYQD";    // just a name for your driver
+  JYQD.forwardPwmInvert = false; // invert PWM signal for forward? (false or true)
+  JYQD.forwardDirLevel = LOW;    // logic level for forward (LOW or HIGH)
+  JYQD.reversePwmInvert = false; // invert PWM signal for reverse? (false or true)
+  JYQD.reverseDirLevel = HIGH;   // logic level for reverse (LOW or HIGH)
+  JYQD.usePwmRamp = false;       // use a ramp to get to PWM value?    
+  JYQD.faultActive = LOW;        // fault active level (LOW or HIGH)
+  JYQD.resetFaultByToggleEnable = true; // reset a fault by toggling enable? 
+  JYQD.enableActive = HIGH;       // enable active level (LOW or HIGH)
+  JYQD.disableAtPwmZeroSpeed = false;  // disable driver at PWM zero speed? (brake function)
+  JYQD.keepPwmZeroSpeed = false;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
+  JYQD.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
+  JYQD.pwmFreq = PWM_FREQ_3900;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
+  JYQD.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)
+  JYQD.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
+  JYQD.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
+
   // your custom brushed/brushless driver (ACT-8015A, JYQD_V7.3E3, etc.)
   CUSTOM.driverName = "CUSTOM";    // just a name for your driver
   CUSTOM.forwardPwmInvert = false; // invert PWM signal for forward? (false or true)
@@ -238,6 +267,8 @@ void AmMotorDriver::begin(){
       mowDriverChip.usePwmRamp = false;
     #elif MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A 
       mowDriverChip = BLDC8015A;    
+    #elif MOTOR_DRIVER_BRUSHLESS_MOW_JYQD
+      mowDriverChip = JYQD;
     #else 
       mowDriverChip = CUSTOM;
     #endif
@@ -500,6 +531,7 @@ void AmBatteryDriver::begin(){
   pinMode(pinBatteryVoltage, INPUT);
   pinMode(pinChargeVoltage, INPUT);
   pinMode(pinChargeCurrent, INPUT);  
+  myHumidity.begin();      
 }
 
 
@@ -521,6 +553,16 @@ float AmBatteryDriver::getChargeVoltage(){
 float AmBatteryDriver::getChargeCurrent(){    
   float amps = ((float)ADC2voltage(analogRead(pinChargeCurrent))) * currentFactor;    
 	return amps;
+}
+
+float AmBatteryDriver::getBatteryTemperature(){
+  #ifdef USE_TEMP_SENSOR
+    // https://learn.sparkfun.com/tutorials/htu21d-humidity-sensor-hookup-guide
+    return(myHumidity.readTemperature());
+    //float humidity = myHumidity.readHumidity();                  
+  #else
+    return 0;
+  #endif
 }
 
 void AmBatteryDriver::enableCharging(bool flag){
@@ -676,5 +718,5 @@ void AmBuzzerDriver::tone(int freq){
   #endif     
 }
 
-#endif
+#endif  // #ifndef __linux__
 

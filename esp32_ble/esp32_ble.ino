@@ -16,7 +16,7 @@
 
 #include "config.h"
 
-#define VERSION "ESP32 firmware V0.4.3,Bluetooth V4.0 LE"
+#define VERSION "ESP32 firmware V0.4.4,Bluetooth V4.0 LE"
 
 // watch dog timeout (WDT) in seconds
 #define WDT_TIMEOUT 60
@@ -122,7 +122,7 @@ String notifyData;
 #endif
 
 //WiFiServer server(80);
-WiFiClient client;
+//WiFiClient client;
 // We declare some handler functions (definition at the end of the file)
 void handleRoot(HTTPRequest * req, HTTPResponse * res);
 ResourceNode * nodeRoot      = new ResourceNode("/", "POST", &handleRoot);

@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include "RobotDriver.h"
+#include "../../SparkFunHTU21D.h"
 
 
 #ifndef __linux__
@@ -30,7 +31,7 @@
 // 8) the PWM frequency it can work with
 
 struct DriverChip {
-    char *driverName;       // name of driver (MC33926 etc.)
+    char const *driverName;       // name of driver (MC33926 etc.)
     bool forwardPwmInvert;  // forward pin uses inverted pwm?
     bool forwardDirLevel;   // forward pin level
     bool reversePwmInvert;  // reverse pin uses inverted pwm?
@@ -56,6 +57,7 @@ class AmRobotDriver: public RobotDriver {
     void run() override;
     bool getRobotID(String &id) override;    
     bool getMcuFirmwareVersion(String &name, String &ver) override;
+    float getCpuTemperature() override;
 };
 
 
@@ -80,6 +82,7 @@ class AmMotorDriver: public MotorDriver {
     DriverChip DRV8308;
     DriverChip A4931;
     DriverChip BLDC8015A;
+    DriverChip JYQD;
     DriverChip CUSTOM;
     DriverChip mowDriverChip;
     DriverChip gearsDriverChip;
@@ -88,6 +91,7 @@ class AmMotorDriver: public MotorDriver {
 
 class AmBatteryDriver : public BatteryDriver {
   public:    
+    HTU21D myHumidity;    
     void begin() override;
     void run() override;
     
@@ -97,6 +101,7 @@ class AmBatteryDriver : public BatteryDriver {
     float getChargeVoltage() override;
     // read charge current
     float getChargeCurrent() override;    
+    float getBatteryTemperature() override;
     // enable battery charging
     virtual void enableCharging(bool flag) override;
     // keep system on or power-off

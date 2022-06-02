@@ -51,9 +51,13 @@ void SerialRobotDriver::begin(){
     
     CONSOLE.println("ioboard init");
 
-    // IMU power-on code (Alfred-PCB-specific) 
+    // IMU/fan power-on code (Alfred-PCB-specific) 
+
     // switch-on IMU via port-expander PCA9555     
     ioExpanderOut(EX1_I2C_ADDR, EX1_IMU_POWER_PORT, EX1_IMU_POWER_PIN, true);
+    
+    // switch-on fan via port-expander PCA9555     
+    ioExpanderOut(EX1_I2C_ADDR, EX1_FAN_POWER_PORT, EX1_FAN_POWER_PIN, true);
 
     // select IMU via multiplexer TCA9548A 
     ioI2cMux(MUX_I2C_ADDR, SLAVE_IMU_MPU, true);  // Alfred dev PCB with buzzer
@@ -113,6 +117,15 @@ bool SerialRobotDriver::getMcuFirmwareVersion(String &name, String &ver){
   return true;
 }
 
+float SerialRobotDriver::getCpuTemperature(){
+  #ifdef __linux__
+    Process p;
+    p.runShellCommand("cat /sys/class/thermal/thermal_zone0/temp");  
+    return p.readString().toFloat() / 1000.0;    
+  #else
+    return 0;
+  #endif
+}
 
 void SerialRobotDriver::sendRequest(String s){
   byte crc = 0;
@@ -327,6 +340,10 @@ void SerialRobotDriver::processComm(){
   }     
 }
 
+void SerialRobotDriver::updatePanelLEDs(){
+  //ioExpanderOut(EX3_I2C_ADDR, EX3_LED1_PORT, EX3_LED1_PIN, true);
+
+}
 
 void SerialRobotDriver::run(){  
   processComm();
@@ -458,6 +475,16 @@ void SerialBatteryDriver::begin(){
 
 void SerialBatteryDriver::run(){
 }    
+
+float SerialBatteryDriver::getBatteryTemperature(){
+  #ifdef __linux__
+    Process p;
+    p.runShellCommand("cat /sys/class/thermal/thermal_zone1/temp");  
+    return p.readString().toFloat() / 1000.0;    
+  #else
+    return 0;
+  #endif
+}
 
 float SerialBatteryDriver::getBatteryVoltage(){
   #ifdef __linux__

@@ -19,7 +19,6 @@
   #include "src/esp/WiFiEsp.h"
 #endif
 #include "PubSubClient.h"
-#include "SparkFunHTU21D.h"
 #include "RunningMedian.h"
 #include "pinman.h"
 #include "ble.h"
@@ -102,7 +101,6 @@ Buzzer buzzer;
 Sonar sonar;
 VL53L0X tof(VL53L0X_ADDRESS_DEFAULT);
 Map maps;
-HTU21D myHumidity;
 RCModel rcmodel;
 
 int stateButton = 0;  
@@ -116,7 +114,7 @@ unsigned long controlLoops = 0;
 String stateOpText = "";  // current operation as text
 String gpsSolText = ""; // current gps solution as text
 float stateTemp = 0; // degreeC
-float stateHumidity = 0; // percent
+//float stateHumidity = 0; // percent
 unsigned long stateInMotionLastTime = 0;
 bool stateChargerConnected = false;
 bool stateInMotionLP = false; // robot is in angular or linear motion? (with motion low-pass filtering)
@@ -365,12 +363,21 @@ void outputConfig(){
   #endif 
   #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_A4931
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_A4931");
-  #endif 
+  #endif   
   #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308");
   #endif 
   #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308");
+  #endif 
+  #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_BLDC8015A
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_BLDC8015A");
+  #endif
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A");
+  #endif
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_JYQD
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_JYQD");
   #endif 
   
   CONSOLE.print("MOTOR_OVERLOAD_CURRENT: ");
@@ -475,7 +482,7 @@ void outputConfig(){
   CONSOLE.print("BUTTON_CONTROL: ");
   CONSOLE.println(BUTTON_CONTROL);
   #ifdef USE_TEMP_SENSOR
-    CONSOLE.println("USE_TEMP_SENSOR: ");
+    CONSOLE.println("USE_TEMP_SENSOR");
   #endif
   #ifdef BUZZER_ENABLE
     CONSOLE.println("BUZZER_ENABLE");    
@@ -508,7 +515,11 @@ void start(){
       #endif
     } else break;
   }  
-  delay(1500);
+  
+  // give Arduino IDE users some time to open serial console to actually see very first console messages
+  #ifndef __linux__
+    delay(1500);
+  #endif
     
   CONSOLE.println("Alive 3");
   #if defined(ENABLE_SD)
@@ -583,9 +594,7 @@ void start(){
 
   maps.begin();      
   //maps.clipperTest();
-  
-  myHumidity.begin();    
-  
+    
   // initialize ESP module
   startWIFI();
   #ifdef ENABLE_NTRIP
@@ -602,7 +611,7 @@ void start(){
 
   #ifdef DRV_SIM_ROBOT
     robotDriver.setSimRobotPosState(stateX, stateY, stateDelta);
-    sessionTest.begin();
+    tester.begin();
   #endif
 }
 
@@ -802,7 +811,7 @@ void run(){
     ntrip.run();
   #endif
   #ifdef DRV_SIM_ROBOT
-    sessionTest.run();
+    tester.run();
   #endif
   robotDriver.run();
   buzzer.run();
@@ -827,20 +836,16 @@ void run(){
   
   // temp
   if (millis() > nextTempTime){
-    nextTempTime = millis() + 60000;
-    #ifdef USE_TEMP_SENSOR
-      // https://learn.sparkfun.com/tutorials/htu21d-humidity-sensor-hookup-guide
-      stateTemp = myHumidity.readTemperature();
-      statTempMin = min(statTempMin, stateTemp);
-      statTempMax = max(statTempMax, stateTemp);
-      stateHumidity = myHumidity.readHumidity();      
-      CONSOLE.print("temp=");
-      CONSOLE.print(stateTemp,1);
-      CONSOLE.print("  humidity=");
-      CONSOLE.print(stateHumidity,0);    
-      CONSOLE.println();        
-    #endif
-    logCPUHealth();
+    nextTempTime = millis() + 60000;    
+    stateTemp = batteryDriver.getBatteryTemperature();
+    statTempMin = min(statTempMin, stateTemp);
+    statTempMax = max(statTempMax, stateTemp);
+    CONSOLE.print("batTemp=");
+    CONSOLE.print(stateTemp,1);
+    float cpuTemp = robotDriver.getCpuTemperature();
+    CONSOLE.print("  cpuTemp=");
+    CONSOLE.print(cpuTemp,0);    
+    //logCPUHealth();
     CONSOLE.println();
   }
   
@@ -921,6 +926,7 @@ void run(){
 
     //CONSOLE.print("active:");
     //CONSOLE.println(activeOp->name());
+    activeOp->checkStop();
     activeOp->run();     
       
     // process button state
@@ -938,6 +944,10 @@ void run(){
       stateButton = 0;  // reset button state
       stateSensor = SENS_STOP_BUTTON;
       setOperation(OP_IDLE, false, true);                             
+    } else if (stateButton == 9){
+      stateButton = 0;  // reset button state
+      stateSensor = SENS_STOP_BUTTON;
+      cmdSwitchOffRobot();
     }
 
     // update operation type      
