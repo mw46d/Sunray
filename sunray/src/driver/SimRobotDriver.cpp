@@ -6,15 +6,22 @@
 
 #include "SimRobotDriver.h"
 #include "../../config.h"
-
+#include "../../robot.h"
+#include "../../helper.h"
 
 
 void SimRobotDriver::begin(){
   CONSOLE.println("using robot driver: SimRobotDriver");
   simTicksLeft = simTicksRight = 0;  
-  simX = simY = simDelta = 0;
   linearSpeed = angularSpeed = 0;
   leftSpeed = rightSpeed = mowSpeed = 0;
+  simX = 0; 
+  simY = 0;
+  simDelta = 0;
+  simObstacleX = 0;
+  simObstacleY = 0;
+  simObstacleRadius = 0;
+  robotIsBumpingIntoObstacle = false;
 }
 
 bool SimRobotDriver::getRobotID(String &id){
@@ -33,12 +40,33 @@ void SimRobotDriver::run(){
   
 }
 
+void SimRobotDriver::setSimRobotPosState(float x, float y, float delta){
+  simX = x;
+  simY = y;
+  simDelta = delta;
+}
+
+void SimRobotDriver::setObstacle(float x, float y, float radius){
+  simObstacleX = x;
+  simObstacleY = y;
+  simObstacleRadius = radius;
+}
+
+bool SimRobotDriver::pointIsInsideObstacle(float x, float y){
+  float dist = distance(simObstacleX, simObstacleY, x, y);  
+  return (dist < simObstacleRadius);
+}
 
 // ------------------------------------------------------------------------------------
 
 SimMotorDriver::SimMotorDriver(SimRobotDriver &sr): simRobot(sr){
   lastEncoderTicksLeft = lastEncoderTicksLeft = 0;
   lastSampleTime = 0;
+  simMotorOverload = false;
+  simOdometryError = false;
+  simMotorFault = false;
+  simNoMotion = false;
+  simNoRobotYawRotation = false;
 } 
 
 void SimMotorDriver::begin(){
@@ -92,9 +120,22 @@ void SimMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){
   float wheelBase = ((float)WHEEL_BASE_CM) / 100.0; 
   simRobot.angularSpeed = (simRobot.rightSpeed - simRobot.leftSpeed) / wheelBase;
 
-  simRobot.simX += cos(simRobot.simDelta) * simRobot.linearSpeed * deltaT;
-  simRobot.simY += sin(simRobot.simDelta) * simRobot.linearSpeed * deltaT; 
-  simRobot.simDelta += simRobot.angularSpeed * deltaT;
+  // if simulating no motion: tires turn but robot does not move 
+  if (!simNoMotion){
+    float x = simRobot.simX + cos(simRobot.simDelta) * simRobot.linearSpeed * deltaT;
+    float y = simRobot.simY + sin(simRobot.simDelta) * simRobot.linearSpeed * deltaT;     
+    // robot cannot move inside simulated obstacle
+    if (simRobot.pointIsInsideObstacle(x, y)){
+      //CONSOLE.println("SIM: robotIsBumpingIntoObstacle");      
+      simRobot.robotIsBumpingIntoObstacle = true;
+    } else {
+      simRobot.simX = x;
+      simRobot.simY = y;     
+      simRobot.robotIsBumpingIntoObstacle = false;
+    } 
+    // if simulating no yaw rotation: tires turn but robot does not rotate
+    if (!simNoRobotYawRotation) simRobot.simDelta += simRobot.angularSpeed * deltaT;
+  }
 
   /*CONSOLE.print("simRobot speed ");
   CONSOLE.print(simRobot.leftSpeed);
@@ -111,7 +152,7 @@ void SimMotorDriver::setMotorPwm(int leftPwm, int rightPwm, int mowPwm){
 }
 
 void SimMotorDriver::getMotorFaults(bool &leftFault, bool &rightFault, bool &mowFault){
-  leftFault = rightFault = mowFault = false;
+  leftFault = rightFault = mowFault = simMotorFault;
 }
 
 void SimMotorDriver::resetMotorFaults(){
@@ -121,6 +162,7 @@ void SimMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, fl
   leftCurrent = abs(simRobot.leftSpeed) / 2.0;
   rightCurrent = abs(simRobot.rightSpeed) / 2.0;
   mowCurrent = abs(simRobot.mowSpeed);
+  if (simMotorOverload) leftCurrent = rightCurrent = mowCurrent = 8.0;
 }
 
 void SimMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &mowTicks){
@@ -135,30 +177,72 @@ void SimMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, int &
   lastEncoderTicksLeft = simRobot.simTicksLeft;
   lastEncoderTicksRight = simRobot.simTicksRight;
   mowTicks = 0;
+  if (simOdometryError) leftTicks = rightTicks = mowTicks = 0;
 }
 
+
+void SimMotorDriver::setSimOdometryError(bool flag){
+  simOdometryError = flag;
+}
+
+void SimMotorDriver::setSimMotorFault(bool flag){
+  simMotorFault = flag;
+}
+
+void SimMotorDriver::setSimMotorOverload(bool flag){
+  simMotorOverload = flag;
+}
+
+void SimMotorDriver::setSimNoMotion(bool flag){
+  simNoMotion = flag;  
+}
+
+void SimMotorDriver::setSimNoRobotYawRotation(bool flag){
+  simNoRobotYawRotation = flag;
+}
+  
 
 // ------------------------------------------------------------------------------------
 
 SimBatteryDriver::SimBatteryDriver(SimRobotDriver &sr) : simRobot(sr){
+  simVoltage = 27.0;
+  simChargerConnected = false;
+  robotIsAtDockingPoint = false;
 }
 
 void SimBatteryDriver::begin(){
 }
 
 void SimBatteryDriver::run(){
+// docking point reached => connect charger  
+  float dockX = 0;
+  float dockY = 0;
+  float dockDelta = 0;  
+  if (maps.getDockingPos(dockX, dockY, dockDelta)){
+    float dist = distance(simRobot.simX, simRobot.simY, dockX, dockY);  
+    robotIsAtDockingPoint = (dist < 0.5);
+  } else {
+    robotIsAtDockingPoint = false;
+  }
+
+  if ((robotIsAtDockingPoint) || (simChargerConnected)){
+    // quickly charge robot :-)
+    setSimFullyChargedVoltage(true);    
+  }
 }    
 
 float SimBatteryDriver::getBatteryVoltage(){
-  return 30.0;
+  return simVoltage;
 }
 
 float SimBatteryDriver::getChargeVoltage(){
-  return 0;
+  if ((robotIsAtDockingPoint) || (simChargerConnected)) return 30.0;
+    else return 4.0;
 }
     
 float SimBatteryDriver::getChargeCurrent(){
-  return 0;
+  if (simChargerConnected) return 1.0;
+    else return 0.15;
 } 
 
 void SimBatteryDriver::enableCharging(bool flag){
@@ -169,9 +253,30 @@ void SimBatteryDriver::keepPowerOn(bool flag){
 }
 
 
+void SimBatteryDriver::setSimUndervoltage(bool flag){
+  if (flag) simVoltage = 17.0;
+    else simVoltage = 27.0;
+}
+
+
+void SimBatteryDriver::setSimGoDockVoltage(bool flag){
+  if (flag) simVoltage = 21.0;
+    else simVoltage = 27.0;
+}
+
+void SimBatteryDriver::setSimFullyChargedVoltage(bool flag){
+  if (flag) simVoltage = 31.5;
+    else simVoltage = 27.0;
+}
+
+void SimBatteryDriver::setSimChargerConnected(bool flag){
+  simChargerConnected = flag;
+}
+
 // ------------------------------------------------------------------------------------
 
 SimBumperDriver::SimBumperDriver(SimRobotDriver &sr): simRobot(sr){
+  simTriggered = false;
 }
 
 void SimBumperDriver::begin(){
@@ -182,19 +287,23 @@ void SimBumperDriver::run(){
 }
 
 bool SimBumperDriver::obstacle(){
-  return false;
+  return (simTriggered || simRobot.robotIsBumpingIntoObstacle);
 }
 
 void SimBumperDriver::getTriggeredBumper(bool &leftBumper, bool &rightBumper){
-  leftBumper = false;
-  rightBumper = false;
-}  	  		    
+  leftBumper = (simTriggered || simRobot.robotIsBumpingIntoObstacle);
+  rightBumper = (simTriggered || simRobot.robotIsBumpingIntoObstacle);
+}  	  		
 
+void SimBumperDriver::setSimTriggered(bool flag){
+  simTriggered = flag;
+}
 
 // ------------------------------------------------------------------------------------
 
 
 SimStopButtonDriver::SimStopButtonDriver(SimRobotDriver &sr): simRobot(sr){
+  simTriggered = false;
 }
 
 void SimStopButtonDriver::begin(){
@@ -205,13 +314,17 @@ void SimStopButtonDriver::run(){
 }
 
 bool SimStopButtonDriver::triggered(){
-  return false; 
+  return simTriggered; 
 }
 
+void SimStopButtonDriver::setSimTriggered(bool flag){
+  simTriggered = flag;
+}
 // ------------------------------------------------------------------------------------
 
 
 SimRainSensorDriver::SimRainSensorDriver(SimRobotDriver &sr): simRobot(sr){
+  simTriggered = false;
 }
 
 void SimRainSensorDriver::begin(){
@@ -222,12 +335,17 @@ void SimRainSensorDriver::run(){
 }
 
 bool SimRainSensorDriver::triggered(){
-  return false; 
+  return simTriggered; 
+}
+
+void SimRainSensorDriver::setSimTriggered(bool flag){
+  simTriggered = flag;
 }
 
 // ------------------------------------------------------------------------------------
 
 SimLiftSensorDriver::SimLiftSensorDriver(SimRobotDriver &sr): simRobot(sr){
+  simTriggered = false;
 }
 
 void SimLiftSensorDriver::begin(){
@@ -237,9 +355,12 @@ void SimLiftSensorDriver::run(){
 }
 
 bool SimLiftSensorDriver::triggered(){
-  return false;
+  return simTriggered;
 }
 
+void SimLiftSensorDriver::setSimTriggered(bool flag){
+  simTriggered = flag;
+}
 
 // ------------------------------------------------------------------------------------
 
@@ -263,6 +384,7 @@ void SimBuzzerDriver::tone(int freq){
 
 SimImuDriver::SimImuDriver(SimRobotDriver &sr): simRobot(sr){    
   nextSampleTime = 0;  
+  simNoData = false;
 }
 
 void SimImuDriver::detect(){  
@@ -281,11 +403,12 @@ void SimImuDriver::run(){
 
 
 bool SimImuDriver::isDataAvail(){
+  if (simNoData) return false;
   if (millis() > nextSampleTime){
     nextSampleTime = millis() + 200; // 5 hz
     roll = 0;
     pitch = 0;
-    yaw = simRobot.simDelta;    
+    yaw = simRobot.simDelta;        
     return true;
   } else {
     return false;
@@ -295,12 +418,18 @@ bool SimImuDriver::isDataAvail(){
 void SimImuDriver::resetData(){
 }
 
+void SimImuDriver::setSimNoData(bool flag){
+  simNoData = flag;
+}
+
 // -------------------------------------------------------------------------------------
 
 
 SimGpsDriver::SimGpsDriver(SimRobotDriver &sr): simRobot(sr){
   nextSolutionTime = 0;
   solutionAvail = false;
+  simGpsJump = false;
+  setSimSolution(SOL_FIXED);
 }
 
 void SimGpsDriver::begin(Client &client, char *host, uint16_t port){
@@ -314,11 +443,15 @@ void SimGpsDriver::begin(HardwareSerial& bus,uint32_t baud){
 void SimGpsDriver::run(){
   if (true){
     if (millis() > nextSolutionTime){
-      nextSolutionTime = millis() + 200; // 5 hz
+      nextSolutionTime = millis() + 200; // 5 hz    
       relPosE = simRobot.simX;
       relPosN = simRobot.simY;
       relPosD = 100;
-      solution = SOL_FIXED;
+      if (simGpsJump){
+        relPosE = simRobot.simX + 3.0;
+        relPosN = simRobot.simY + 3.0; 
+      }      
+      //solution = SOL_FIXED;
       lon = relPosE;
       lat =relPosN;
       height = relPosD;
@@ -330,17 +463,26 @@ void SimGpsDriver::run(){
       solutionAvail = true;
     }
   }
-}
+}    
     
-    
-bool SimGpsDriver::configure(){  
+bool SimGpsDriver::configure(){
+	return true;
 }
     
     
 void SimGpsDriver::reboot(){
+  CONSOLE.println("SimGpsDriver::reboot");
 }
 
 
+void SimGpsDriver::setSimSolution(SolType sol){
+  solution = sol;  
+}
 
+
+bool SimGpsDriver::setSimGpsJump(bool flag){
+  simGpsJump = flag;
+  return flag;
+}
 
 

@@ -1,6 +1,10 @@
 #include "comm.h"
 #include "config.h"
 #include "robot.h"
+#include "StateEstimator.h"
+#include "LineTracker.h"
+#include "Stats.h"
+#include "src/op/op.h"
 #include "reset.h"
 #ifdef __linux__
   #include <BridgeClient.h>
@@ -749,7 +753,8 @@ void processCmd(bool checkCrc, bool decrypt){
   int idx = cmd.lastIndexOf(',');
   if (idx < 1){
     if (checkCrc){
-      CONSOLE.println("COMM CRC ERROR");
+      CONSOLE.print("COMM CRC ERROR: ");
+      CONSOLE.println(cmd);
       return;
     }
   } else {
@@ -1115,7 +1120,8 @@ void outputConsole(){
     controlLoops=0;
     CONSOLE.print (statControlCycleTime);
     CONSOLE.print (" op=");
-    CONSOLE.print (stateOp);
+    CONSOLE.print (activeOp->getOpChain());
+    //CONSOLE.print (stateOp);
     CONSOLE.print (" freem=");
     CONSOLE.print (freeMemory ());
     #ifndef __linux__

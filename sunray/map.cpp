@@ -468,6 +468,9 @@ void Map::begin(){
   mowPointsIdx = 0;
   freePointsIdx = 0;
   dockPointsIdx = 0;
+  shouldDock = false; 
+  shouldRetryDock = false; 
+  shouldMow = false;         
   mapCRC = 0;  
   CONSOLE.print("sizeof Point=");
   CONSOLE.println(sizeof(Point));  
@@ -824,9 +827,9 @@ bool Map::nextPointIsStraight(){
 }
 
 
-// set robot state (x,y,delta) to final docking state (x,y,delta)
-void Map::setRobotStatePosToDockingPos(float &x, float &y, float &delta){
-  if (dockPoints.numPoints < 2) return;
+// get docking position and orientation (x,y,delta)
+bool Map::getDockingPos(float &x, float &y, float &delta){
+  if (dockPoints.numPoints < 2) return false;
   Point dockFinalPt;
   Point dockPrevPt;
   dockFinalPt.assign(dockPoints.points[ dockPoints.numPoints-1]);  
@@ -834,10 +837,13 @@ void Map::setRobotStatePosToDockingPos(float &x, float &y, float &delta){
   x = dockFinalPt.x();
   y = dockFinalPt.y();
   delta = pointsAngle(dockPrevPt.x(), dockPrevPt.y(), dockFinalPt.x(), dockFinalPt.y());  
+  return true;
 }             
 
 // mower has been docked
 void Map::setIsDocked(bool flag){
+  //CONSOLE.print("Map::setIsDocked ");
+  //CONSOLE.println(flag);
   if (flag){
     if (dockPoints.numPoints < 2) return; // keep current wayMode (not enough docking points for docking wayMode)  
     wayMode = WAY_DOCK;
@@ -888,7 +894,7 @@ bool Map::retryDocking(float stateX, float stateY){
 }
 
 
-bool Map::startDocking(float stateX, float stateY){
+bool Map::startDocking(float stateX, float stateY){  
   CONSOLE.println("Map::startDocking");
   if ((memoryCorruptions != 0) || (memoryAllocErrors != 0)){
     CONSOLE.println("ERROR startDocking: memory errors");
@@ -896,9 +902,13 @@ bool Map::startDocking(float stateX, float stateY){
   }  
   shouldDock = true;
   shouldRetryDock = false;
-  shouldMow = false;
+  shouldMow = false;    
   if (dockPoints.numPoints > 0){
-    // find valid path to docking point      
+    if (wayMode == WAY_DOCK) {
+      CONSOLE.println("skipping path planning to first docking point: already docking");    
+      return true;
+    }
+    // find valid path from robot to first docking point      
     //freePoints.alloc(0);
     Point src;
     Point dst;
@@ -932,7 +942,7 @@ bool Map::startMowing(float stateX, float stateY){
   shouldRetryDock = false;
   shouldMow = true;    
   if (mowPoints.numPoints > 0){
-    // find valid path to mowing point    
+    // find valid path from robot (or first docking point) to mowing point    
     //freePoints.alloc(0);
     Point src;
     Point dst;
@@ -1101,10 +1111,10 @@ void Map::findPathFinderSafeStartPoint(Point &src, Point &dst){
 // go to next point
 // sim=true: only simulate (do not change data)
 bool Map::nextPoint(bool sim){
-  CONSOLE.print("nextPoint sim=");
-  CONSOLE.print(sim);
-  CONSOLE.print(" wayMode=");
-  CONSOLE.println(wayMode);
+  //CONSOLE.print("nextPoint sim=");
+  //CONSOLE.print(sim);
+  //CONSOLE.print(" wayMode=");
+  //CONSOLE.println(wayMode);
   if (wayMode == WAY_DOCK){
     return (nextDockPoint(sim));
   } 

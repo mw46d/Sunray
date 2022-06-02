@@ -33,7 +33,7 @@ void SerialRobotDriver::begin(){
   motorFault = false;
   mcuCommunicationLost = true;
   nextSummaryTime = 0;
-  nextConsoleTime = 0;
+  nextConsoleTime = 0; 
   nextMotorTime = 0;
   cmdMotorResponseCounter = 0;
   cmdSummaryResponseCounter = 0;
@@ -43,6 +43,7 @@ void SerialRobotDriver::begin(){
   robotID = "XX";
 
   #ifdef __linux__
+    CONSOLE.println("reading robot ID...");
     Process p;
     p.runShellCommand("ip link show eth0 | grep link/ether | awk '{print $2}'");
 	  robotID = p.readString();    
@@ -90,6 +91,7 @@ void SerialRobotDriver::begin(){
 
     // EEPROM test
     if (false){
+      CONSOLE.println("EEPROM test");
       ioEepromWriteByte( EEPROM_I2C_ADDR, 0, 42);
       delay(50);
       int v = ioEepromReadByte( EEPROM_I2C_ADDR, 0);
@@ -186,7 +188,7 @@ void SerialRobotDriver::motorResponse(){
     }    
   }
   if (triggeredStopButton){
-    CONSOLE.println("STOPBUTTON");
+    //CONSOLE.println("STOPBUTTON");
   }
   cmdMotorResponseCounter++;
   mcuCommunicationLost=false;
@@ -343,7 +345,7 @@ void SerialRobotDriver::run(){
         requestVersion();
       }
     }    
-    if (cmdMotorResponseCounter == 0){
+    if ((cmdMotorCounter > 0) && (cmdMotorResponseCounter == 0)){
       CONSOLE.println("WARN: resetting motor ticks");
       resetMotorTicks = true;
       mcuCommunicationLost = true;
