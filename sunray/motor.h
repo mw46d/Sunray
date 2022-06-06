@@ -41,6 +41,7 @@ class Motor {
     bool pwmSpeedCurveDetection;
     unsigned long motorLeftTicks;
     unsigned long motorRightTicks;
+    unsigned long motorMowTicks;    
     float linearSpeedSet; // m/s
     float angularSpeedSet; // rad/s
     float motorLeftSense; // left motor current (amps)
@@ -66,8 +67,10 @@ class Motor {
     float motorRightRpmSet;   
     float motorLeftRpmCurr;
     float motorRightRpmCurr;
+    float motorMowRpmCurr;    
     float motorLeftRpmCurrLP;
     float motorRightRpmCurrLP;    
+    float motorMowRpmCurrLP;    
     float motorLeftRpmLast;
     float motorRightRpmLast;
     bool motorMowForwardSet; 
@@ -80,9 +83,9 @@ class Motor {
     float motorRightPWMCurrLP;    
     unsigned long lastControlTime;    
     unsigned long nextSenseTime;            
-    bool resetMotorFault;
-    int resetMotorFaultCounter;
-    unsigned long nextResetMotorFaultTime;
+    bool recoverMotorFault;
+    int recoverMotorFaultCounter;
+    unsigned long nextRecoverMotorFaultTime;
     int motorLeftTicksZero;    
     int motorRightTicksZero;    
     PID motorLeftPID;
@@ -92,6 +95,11 @@ class Motor {
     void speedPWM ( int pwmLeft, int pwmRight, int pwmMow );
     void control();    
     bool checkFault();
+    void checkOverload();
+    bool checkOdometryError();
+    bool checkMowRpmFault();
+    bool checkCurrentTooHighError();    
+    bool checkCurrentTooLowError();
     void sense();
     void dumpOdoTicks(int seconds);    
 };

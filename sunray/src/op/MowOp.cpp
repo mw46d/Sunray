@@ -172,6 +172,11 @@ void MowOp::onMotorError(){
             changeOp(errorOp);
             return;      
         }  
+    } else {
+        CONSOLE.println("no obstacle avoidance activated on motor errors, giving up");    
+        stateSensor = SENS_MOTOR_ERROR;
+        changeOp(errorOp);        
+        return;
     }
 }
 
@@ -219,5 +224,15 @@ void MowOp::onNoFurtherWaypoints(){
             changeOp(idleOp); 
         }
     }
+}
+
+void MowOp::onImuTilt(){
+    stateSensor = SENS_IMU_TILT;
+    changeOp(errorOp);
+}
+
+void MowOp::onImuError(){
+    stateSensor = SENS_IMU_TIMEOUT;
+    changeOp(errorOp);
 }
 

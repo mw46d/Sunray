@@ -17,9 +17,11 @@ void SerialRobotDriver::begin(){
   COMM.begin(ROBOT_BAUDRATE);
   encoderTicksLeft = 0;
   encoderTicksRight = 0;
+  encoderTicksMow = 0;
   chargeVoltage = 0;
   chargeCurrent = 0;  
   batteryVoltage = 0;
+  cpuTemp = 0;
   mowCurr = 0;
   motorLeftCurr = 0;
   motorRightCurr = 0;
@@ -35,12 +37,23 @@ void SerialRobotDriver::begin(){
   nextSummaryTime = 0;
   nextConsoleTime = 0; 
   nextMotorTime = 0;
+  nextTempTime = 0;
+  nextWifiTime = 0;
+  nextLedTime = 0;
+  ledPanelInstalled = true;
   cmdMotorResponseCounter = 0;
   cmdSummaryResponseCounter = 0;
   cmdMotorCounter = 0;
   cmdSummaryCounter = 0;
   requestLeftPwm = requestRightPwm = requestMowPwm = 0;
   robotID = "XX";
+  ledStateWifiInactive = false;
+  ledStateWifiConnected = false;
+  ledStateGpsFix = false;
+  ledStateGpsFloat = false;
+  ledStateShutdown = false;  
+  ledStateError = false;
+  ledStateShutdown = false;
 
   #ifdef __linux__
     CONSOLE.println("reading robot ID...");
@@ -71,12 +84,22 @@ void SerialRobotDriver::begin(){
     
     // buzzer test
     if (false){
+      CONSOLE.println("buzzer test");    
       ioExpanderOut(EX2_I2C_ADDR, EX2_BUZZER_PORT, EX2_BUZZER_PIN, true);
       delay(500);
       ioExpanderOut(EX2_I2C_ADDR, EX2_BUZZER_PORT, EX2_BUZZER_PIN, false);    
     }
 
+    // LEDs
+    CONSOLE.println("turning LEDs green");
+    if (!setLedState(1, true, false)){
+      CONSOLE.println("LED panel communication failed - assuming no LED panel installed");
+    }
+    setLedState(2, true, false);
+    setLedState(3, true, false);
+  
     // start ADC
+    CONSOLE.println("starting ADC");    
     ioAdcStart(ADC_I2C_ADDR, false, true);
 
     // ADC test    
@@ -102,9 +125,33 @@ void SerialRobotDriver::begin(){
       CONSOLE.print("EEPROM=");
       CONSOLE.println(v);
     }
-    
+
   #endif
 }
+
+bool SerialRobotDriver::setLedState(int ledNumber, bool greenState, bool redState){
+  if (!ledPanelInstalled) return false;
+  if (ledNumber == 1){
+    ledPanelInstalled = ioExpanderOut(EX3_I2C_ADDR, EX3_LED1_GREEN_PORT, EX3_LED1_GREEN_PIN, greenState);
+    if (!ledPanelInstalled) return false;
+    ledPanelInstalled = ioExpanderOut(EX3_I2C_ADDR, EX3_LED1_RED_PORT, EX3_LED1_RED_PIN, redState);        
+    if (!ledPanelInstalled) return false;  
+  }
+  else if (ledNumber == 2){
+    ledPanelInstalled = ioExpanderOut(EX3_I2C_ADDR, EX3_LED2_GREEN_PORT, EX3_LED2_GREEN_PIN, greenState);
+    if (!ledPanelInstalled) return false;    
+    ledPanelInstalled = ioExpanderOut(EX3_I2C_ADDR, EX3_LED2_RED_PORT, EX3_LED2_RED_PIN, redState);        
+    if (!ledPanelInstalled) return false;    
+  }
+  else if (ledNumber == 3){
+    ledPanelInstalled = ioExpanderOut(EX3_I2C_ADDR, EX3_LED3_GREEN_PORT, EX3_LED3_GREEN_PIN, greenState);
+    if (!ledPanelInstalled) return false;    
+    ledPanelInstalled = ioExpanderOut(EX3_I2C_ADDR, EX3_LED3_RED_PORT, EX3_LED3_RED_PIN, redState);        
+    if (!ledPanelInstalled) return false;    
+  }
+  return true;
+}
+
 
 bool SerialRobotDriver::getRobotID(String &id){
   id = robotID;
@@ -118,15 +165,48 @@ bool SerialRobotDriver::getMcuFirmwareVersion(String &name, String &ver){
 }
 
 float SerialRobotDriver::getCpuTemperature(){
+  return cpuTemp;
+}
+
+void SerialRobotDriver::updateCpuTemperature(){
   #ifdef __linux__
-    Process p;
-    p.runShellCommand("cat /sys/class/thermal/thermal_zone0/temp");  
-    return p.readString().toFloat() / 1000.0;    
-  #else
-    return 0;
+    //unsigned long startTime = millis();
+    String s;        
+    while (cpuTempProcess.available()) s+= (char)cpuTempProcess.read();
+    if (s.length() > 0) {
+      cpuTemp = s.toFloat() / 1000.0;    
+      //CONSOLE.print("updateCpuTemperature cpuTemp=");
+      //CONSOLE.println(cpuTemp);
+    }
+    cpuTempProcess.runShellCommand("cat /sys/class/thermal/thermal_zone0/temp");      
+    //unsigned long duration = millis() - startTime;        
+    //CONSOLE.print("updateCpuTemperature duration: ");
+    //CONSOLE.println(duration);        
   #endif
 }
 
+void SerialRobotDriver::updateWifiConnectionState(){
+  #ifdef __linux__
+    //unsigned long startTime = millis();   
+    String s; 
+    while (wifiStatusProcess.available()) s+= (char)wifiStatusProcess.read(); 
+    if (s.length() > 0){    
+      s.trim();
+      //CONSOLE.print("updateWifiConnectionState state=");
+      //CONSOLE.println(s);
+      // DISCONNECTED, SCANNING, INACTIVE, COMPLETED 
+      //CONSOLE.println(s);
+      ledStateWifiConnected = (s == "COMPLETED");
+      ledStateWifiInactive = (s == "INACTIVE");                   
+    }  
+    wifiStatusProcess.runShellCommand("wpa_cli -i wlan0 status | grep wpa_state | cut -d '=' -f2");  
+    //unsigned long duration = millis() - startTime;        
+    //CONSOLE.print("updateWifiConnectionState duration: ");
+    //CONSOLE.println(duration);
+  #endif
+}
+
+// send serial request to MCU
 void SerialRobotDriver::sendRequest(String s){
   byte crc = 0;
   for (int i=0; i < s.length(); i++) crc += s[i];
@@ -140,6 +220,7 @@ void SerialRobotDriver::sendRequest(String s){
 }
 
 
+// request MCU SW version
 void SerialRobotDriver::requestVersion(){
   String req;
   req += "AT+V";  
@@ -147,6 +228,7 @@ void SerialRobotDriver::requestVersion(){
 }
 
 
+// request MCU summary
 void SerialRobotDriver::requestSummary(){
   String req;
   req += "AT+S";  
@@ -154,6 +236,8 @@ void SerialRobotDriver::requestSummary(){
   cmdSummaryCounter++;
 }
 
+
+// request MCU motor PWM
 void SerialRobotDriver::requestMotorPwm(int leftPwm, int rightPwm, int mowPwm){
   String req;
   req += "AT+M,";
@@ -203,6 +287,7 @@ void SerialRobotDriver::motorResponse(){
   if (triggeredStopButton){
     //CONSOLE.println("STOPBUTTON");
   }
+  //CONSOLE.println(encoderTicksMow);
   cmdMotorResponseCounter++;
   mcuCommunicationLost=false;
 }
@@ -341,8 +426,36 @@ void SerialRobotDriver::processComm(){
 }
 
 void SerialRobotDriver::updatePanelLEDs(){
-  //ioExpanderOut(EX3_I2C_ADDR, EX3_LED1_PORT, EX3_LED1_PIN, true);
-
+  if (ledStateShutdown) {
+    setLedState(1, false, false);
+    setLedState(2, false, false);
+    setLedState(3, false, false);        
+    return;    
+  }
+  // panel led numbers (top-down): 2,3,1   
+  // idle/error status
+  if (ledStateError){
+    setLedState(2, false, true);
+  } else {
+    setLedState(2, true, false);
+  }
+  // gps status
+  if (ledStateGpsFix){
+    setLedState(3, true, false); 
+  } 
+  else if (ledStateGpsFloat) {
+    setLedState(3, false, true);
+  } else {
+    setLedState(3, false, false);    
+  }
+  // wifi status
+  if (ledStateWifiConnected){ 
+    setLedState(1, true, false);
+  } else if (ledStateWifiInactive) {
+    setLedState(1, false, true);
+  } else {
+    setLedState(1, false, false);
+  }
 }
 
 void SerialRobotDriver::run(){  
@@ -356,7 +469,7 @@ void SerialRobotDriver::run(){
     requestSummary();
   }
   if (millis() > nextConsoleTime){
-    nextConsoleTime = millis() + 1000;    
+    nextConsoleTime = millis() + 1000;  // 1 hz    
     if (!mcuCommunicationLost){
       if (mcuFirmwareName == ""){
         requestVersion();
@@ -379,8 +492,20 @@ void SerialRobotDriver::run(){
       if (cmdMotorResponseCounter == 0){
         // FIXME: maybe reset motor PID controls here?
       }
-    }   
-    cmdMotorCounter=cmdMotorResponseCounter=cmdSummaryCounter=cmdSummaryResponseCounter=0;
+    }     
+    cmdMotorCounter=cmdMotorResponseCounter=cmdSummaryCounter=cmdSummaryResponseCounter=0;    
+  }  
+  if (millis() > nextLedTime){
+    nextLedTime = millis() + 3000;  // 3 sec
+    updatePanelLEDs();
+  }
+  if (millis() > nextTempTime){
+    nextTempTime = millis() + 59000; // 59 sec
+    updateCpuTemperature();          
+  }
+  if (millis() > nextWifiTime){
+    nextWifiTime = millis() + 7000; // 7 sec
+    updateWifiConnectionState();
   }
 }
 
@@ -392,7 +517,8 @@ SerialMotorDriver::SerialMotorDriver(SerialRobotDriver &sr): serialRobot(sr){
 
 void SerialMotorDriver::begin(){
   lastEncoderTicksLeft=0;
-  lastEncoderTicksRight=0;         
+  lastEncoderTicksRight=0;
+  lastEncoderTicksMow=0;         
 }
 
 void SerialMotorDriver::run(){
@@ -445,19 +571,24 @@ void SerialMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, in
     serialRobot.resetMotorTicks = false;
     //CONSOLE.println("getMotorEncoderTicks: resetMotorTicks");
     lastEncoderTicksLeft = serialRobot.encoderTicksLeft;
-    lastEncoderTicksRight = serialRobot.encoderTicksRight; 
+    lastEncoderTicksRight = serialRobot.encoderTicksRight;
+    lastEncoderTicksMow = serialRobot.encoderTicksMow;
   }
   leftTicks = serialRobot.encoderTicksLeft - lastEncoderTicksLeft;
   rightTicks = serialRobot.encoderTicksRight - lastEncoderTicksRight;
+  mowTicks = serialRobot.encoderTicksMow - lastEncoderTicksMow;
   if (leftTicks > 1000){
     leftTicks = 0;
   }
   if (rightTicks > 1000){
     rightTicks = 0;
   } 
+  if (mowTicks > 1000){
+    mowTicks = 0;
+  }
   lastEncoderTicksLeft = serialRobot.encoderTicksLeft;
   lastEncoderTicksRight = serialRobot.encoderTicksRight;
-  mowTicks = 0;
+  lastEncoderTicksMow = serialRobot.encoderTicksMow;
 }
 
 
@@ -466,6 +597,8 @@ void SerialMotorDriver::getMotorEncoderTicks(int &leftTicks, int &rightTicks, in
 SerialBatteryDriver::SerialBatteryDriver(SerialRobotDriver &sr) : serialRobot(sr){
   mcuBoardPoweredOn = true;
   nextADCTime = 0;
+  nextTempTime = 0;
+  batteryTemp = 0;
   adcTriggered = false;
   linuxShutdownTime = 0;
 }
@@ -474,13 +607,33 @@ void SerialBatteryDriver::begin(){
 }
 
 void SerialBatteryDriver::run(){
+  if (millis() > nextTempTime){
+    nextTempTime = millis() + 57000; // 57 sec
+    updateBatteryTemperature();
+  }
 }    
+
+void SerialBatteryDriver::updateBatteryTemperature(){
+  #ifdef __linux__
+    //unsigned long startTime = millis();
+    String s;        
+    while (batteryTempProcess.available()) s+= (char)batteryTempProcess.read();
+    if (s.length() > 0) {
+      batteryTemp = s.toFloat() / 1000.0;    
+      //CONSOLE.print("updateBatteryTemperature batteryTemp=");
+      //CONSOLE.println(batteryTemp);
+    }
+    batteryTempProcess.runShellCommand("cat /sys/class/thermal/thermal_zone1/temp");  
+    //unsigned long duration = millis() - startTime;        
+    //CONSOLE.print("updateBatteryTemperature duration: ");
+    //CONSOLE.println(duration);        
+  #endif
+}
+
 
 float SerialBatteryDriver::getBatteryTemperature(){
   #ifdef __linux__
-    Process p;
-    p.runShellCommand("cat /sys/class/thermal/thermal_zone1/temp");  
-    return p.readString().toFloat() / 1000.0;    
+    return batteryTemp;
   #else
     return 0;
   #endif
@@ -540,12 +693,16 @@ void SerialBatteryDriver::keepPowerOn(bool flag){
     if (flag){
       // keep power on
       linuxShutdownTime = 0;
+      serialRobot.ledStateShutdown = false;
     } else {
       // shutdown linux - request could be for two reasons:
       // 1. battery voltage sent by MUC-PCB seem to be too low 
       // 2. MCU-PCB is powered-off 
       if (linuxShutdownTime == 0){
         linuxShutdownTime = millis() + 5000; // some timeout 
+        // turn off panel LEDs
+        serialRobot.ledStateShutdown = true;
+        serialRobot.updatePanelLEDs();        
       }
       if (millis() > linuxShutdownTime){
         linuxShutdownTime = millis() + 10000; // re-trigger linux command after 10 secs

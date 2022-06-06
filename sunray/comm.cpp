@@ -458,10 +458,6 @@ void cmdSwitchOffRobot(){
   cmdAnswer(s);
   setOperation(OP_IDLE);
   battery.switchOff();
-  #ifdef __linux__
-    Process p;
-    p.runShellCommand("shutdown now");
-  #endif
 }
 
 // kidnap test (kidnap detection should trigger)
@@ -849,8 +845,10 @@ void processBLE(){
     while ( BLE.available() ){    
       ch = BLE.read();      
       if ((ch == '\r') || (ch == '\n')) {   
-        CONSOLE.print("BLE:");     
-        CONSOLE.println(cmd);        
+        #ifdef VERBOSE
+          CONSOLE.print("BLE:");     
+          CONSOLE.println(cmd);        
+        #endif
         processCmd(true, true);              
         BLE.print(cmdResponse);    
         cmd = "";
