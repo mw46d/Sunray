@@ -227,7 +227,7 @@ AmMotorDriver::AmMotorDriver(){
   BLDC8015A.keepPwmZeroSpeed = true;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
   BLDC8015A.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
   BLDC8015A.pwmFreq = PWM_FREQ_29300;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
-  BLDC8015A.adcVoltToAmpOfs = 1.65;      // ADC voltage to amps (offset)
+  BLDC8015A.adcVoltToAmpOfs = 1.65;      // ADC voltage to amps (offset)    // current (amps)= ((ADCvoltage + ofs)^pow) * scale
   BLDC8015A.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   BLDC8015A.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 
@@ -245,7 +245,7 @@ AmMotorDriver::AmMotorDriver(){
   JYQD.keepPwmZeroSpeed = false;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
   JYQD.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
   JYQD.pwmFreq = PWM_FREQ_3900;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
-  JYQD.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)
+  JYQD.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)   // current (amps)= ((ADCvoltage + ofs)^pow) * scale
   JYQD.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   JYQD.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 
@@ -300,6 +300,8 @@ void AmMotorDriver::begin(){
       gearsDriverChip = A4931;
     #elif MOTOR_DRIVER_BRUSHLESS_GEARS_BLDC8015A
       gearsDriverChip = BLDC8015A;    
+    #elif MOTOR_DRIVER_BRUSHLESS_GEARS_JYQD
+      gearsDriverChip = JYQD;
     #else 
       gearsDriverChip = CUSTOM;
     #endif
@@ -495,6 +497,7 @@ void AmMotorDriver::resetMotorFaults(){
 }
 
 void AmMotorDriver::getMotorCurrent(float &leftCurrent, float &rightCurrent, float &mowCurrent){
+  // current (amps)= ((ADCvoltage + ofs)^pow) * scale
   leftCurrent = pow(
       ((float)ADC2voltage(analogRead(pinMotorLeftSense))) + gearsDriverChip.adcVoltToAmpOfs, gearsDriverChip.adcVoltToAmpPow
       )  * gearsDriverChip.adcVoltToAmpScale;
