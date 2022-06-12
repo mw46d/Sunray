@@ -171,6 +171,7 @@ AmMotorDriver::AmMotorDriver(){
   MC33926.disableAtPwmZeroSpeed=false;  
   MC33926.keepPwmZeroSpeed = true;
   MC33926.minPwmSpeed = 0;
+  MC33926.maxPwmSpeed = 255;
   MC33926.pwmFreq = PWM_FREQ_3900;
   MC33926.adcVoltToAmpOfs = 0;
   MC33926.adcVoltToAmpScale = 1.905 * 2; // ADC voltage to amp for 2 drivers connected in parallel
@@ -189,8 +190,9 @@ AmMotorDriver::AmMotorDriver(){
   DRV8308.disableAtPwmZeroSpeed=false;
   DRV8308.keepPwmZeroSpeed = false; // never go to zero PWM (driver requires a periodic signal)  
   DRV8308.minPwmSpeed = 2;
+  DRV8308.maxPwmSpeed = 255;
   DRV8308.pwmFreq = PWM_FREQ_29300;
-  DRV8308.adcVoltToAmpOfs = -1.65;
+  DRV8308.adcVoltToAmpOfs = -1.65;   // brushless-adapter: 0A=1.65V, resolution 132mV/A 
   DRV8308.adcVoltToAmpScale = 7.57; 
   DRV8308.adcVoltToAmpPow = 1.0; 
 
@@ -208,8 +210,9 @@ AmMotorDriver::AmMotorDriver(){
   A4931.disableAtPwmZeroSpeed=false;
   A4931.keepPwmZeroSpeed = true;  
   A4931.minPwmSpeed = 0;    
+  A4931.maxPwmSpeed = 255;    
   A4931.pwmFreq = PWM_FREQ_29300;   
-  A4931.adcVoltToAmpOfs = -1.65;
+  A4931.adcVoltToAmpOfs = -1.65;    // brushless-adapter: 0A=1.65V, resolution 132mV/A
   A4931.adcVoltToAmpScale = 7.57;
   A4931.adcVoltToAmpPow = 1.0; 
 
@@ -226,8 +229,9 @@ AmMotorDriver::AmMotorDriver(){
   BLDC8015A.disableAtPwmZeroSpeed = false;  // disable driver at PWM zero speed? (brake function)
   BLDC8015A.keepPwmZeroSpeed = true;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
   BLDC8015A.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
+  BLDC8015A.maxPwmSpeed = 255;            
   BLDC8015A.pwmFreq = PWM_FREQ_29300;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
-  BLDC8015A.adcVoltToAmpOfs = 1.65;      // ADC voltage to amps (offset)    // current (amps)= ((ADCvoltage + ofs)^pow) * scale
+  BLDC8015A.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)    // brushless-adapter: 0A=1.65V, resolution 132mV/A  
   BLDC8015A.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   BLDC8015A.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 
@@ -244,8 +248,9 @@ AmMotorDriver::AmMotorDriver(){
   JYQD.disableAtPwmZeroSpeed = false;  // disable driver at PWM zero speed? (brake function)
   JYQD.keepPwmZeroSpeed = false;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
   JYQD.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
+  JYQD.maxPwmSpeed = 255;            
   JYQD.pwmFreq = PWM_FREQ_3900;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
-  JYQD.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)   // current (amps)= ((ADCvoltage + ofs)^pow) * scale
+  JYQD.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)   // brushless-adapter: 0A=1.65V, resolution 132mV/A
   JYQD.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   JYQD.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 
@@ -260,11 +265,12 @@ AmMotorDriver::AmMotorDriver(){
   CUSTOM.resetFaultByToggleEnable = false; // reset a fault by toggling enable? 
   CUSTOM.enableActive = LOW;       // enable active level (LOW or HIGH)
   CUSTOM.disableAtPwmZeroSpeed=false;  // disable driver at PWM zero speed? (brake function)
-  CUSTOM.keepPwmZeroSpeed = true;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
-  CUSTOM.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
+  CUSTOM.keepPwmZeroSpeed = false;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
+  CUSTOM.minPwmSpeed = 6;          // minimum PWM speed your driver can operate
+  CUSTOM.maxPwmSpeed = 249;          
   CUSTOM.pwmFreq = PWM_FREQ_3900;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
-  CUSTOM.adcVoltToAmpOfs = 0;      // ADC voltage to amps (offset)
-  CUSTOM.adcVoltToAmpScale = 1.00; // ADC voltage to amps (scale)
+  CUSTOM.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)        // brushless-adapter: 0A=1.65V, resolution 132mV/A
+  CUSTOM.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   CUSTOM.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
 }
     
@@ -379,7 +385,8 @@ void AmMotorDriver::setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip
   } else {
     // verhindert dass das PWM Signal 0 wird. Der Driver braucht einen kurzen Impuls um das PWM zu erkennen.
     // Wenn der z.B. vom max. PWM Wert auf 0 bzw. das Signal auf Low geht, behält er den vorherigen Wert bei und der Motor stoppt nicht
-    if (abs(speed) < chip.minPwmSpeed) speed = chip.minPwmSpeed * speedSign;  
+    if (abs(speed) < chip.minPwmSpeed) speed = chip.minPwmSpeed * speedSign;
+    if (abs(speed) > chip.maxPwmSpeed) speed = chip.maxPwmSpeed * speedSign;  
   }
   
   if (reverse) {  
