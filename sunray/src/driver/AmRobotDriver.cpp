@@ -266,9 +266,9 @@ AmMotorDriver::AmMotorDriver(){
   CUSTOM.enableActive = LOW;       // enable active level (LOW or HIGH)
   CUSTOM.disableAtPwmZeroSpeed=false;  // disable driver at PWM zero speed? (brake function)
   CUSTOM.keepPwmZeroSpeed = false;  // keep PWM zero value (disregard minPwmSpeed at zero speed)?
-  CUSTOM.minPwmSpeed = 6;          // minimum PWM speed your driver can operate
-  CUSTOM.maxPwmSpeed = 249;          
-  CUSTOM.pwmFreq = PWM_FREQ_3900;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
+  CUSTOM.minPwmSpeed = 0;          // minimum PWM speed your driver can operate
+  CUSTOM.maxPwmSpeed = 255;          
+  CUSTOM.pwmFreq = PWM_FREQ_29300;  // choose between PWM_FREQ_3900 and PWM_FREQ_29300 here   
   CUSTOM.adcVoltToAmpOfs = -1.65;      // ADC voltage to amps (offset)        // brushless-adapter: 0A=1.65V, resolution 132mV/A
   CUSTOM.adcVoltToAmpScale = 7.57; // ADC voltage to amps (scale)
   CUSTOM.adcVoltToAmpPow = 1.0;    // ADC voltage to amps (power of number)
@@ -388,7 +388,7 @@ void AmMotorDriver::setMotorDriver(int pinDir, int pinPWM, int speed, DriverChip
     if (abs(speed) < chip.minPwmSpeed) speed = chip.minPwmSpeed * speedSign;
     if (abs(speed) > chip.maxPwmSpeed) speed = chip.maxPwmSpeed * speedSign;  
   }
-  
+
   if (reverse) {  
     //CONSOLE.print("reverse ");
     //CONSOLE.print(pinDir);

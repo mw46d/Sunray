@@ -5,6 +5,9 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#ifdef __linux__
+  #include <WiFi.h>
+#endif
 
 #include "robot.h"
 #include "StateEstimator.h"
@@ -200,6 +203,7 @@ void sensorTest(){
   while (millis() < stopTime){
     sonar.run();
     bumper.run();
+	liftDriver.run();
     if (millis() > nextMeasureTime){
       nextMeasureTime = millis() + 1000;      
       if (SONAR_ENABLE){
@@ -228,7 +232,13 @@ void sensorTest(){
         CONSOLE.print(((int)bumper.obstacle()));
         CONSOLE.print("\t");
        
-      } 
+      }
+	#ifdef ENABLE_LIFT_DETECTION 
+        CONSOLE.print("lift sensor (triggered): ");		
+        CONSOLE.print(((int)liftDriver.triggered()));	
+        CONSOLE.print("\t");							            
+    #endif  
+	
       CONSOLE.println();  
       watchdogReset();
       robotDriver.run();   
@@ -359,28 +369,35 @@ void outputConfig(){
   #ifdef MOTOR_DRIVER_BRUSHLESS
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS");
   #endif
-  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_A4931
-    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_A4931");
-  #endif 
-  #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_A4931
-    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_A4931");
-  #endif   
+
   #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_DRV8308");
   #endif 
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A");
+  #endif
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_A4931
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_A4931");
+  #endif 
+  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_JYQD
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_JYQD");
+  #endif 
+
   #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_DRV8308");
   #endif 
   #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_BLDC8015A
     CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_BLDC8015A");
   #endif
-  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A
-    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_BLDC8015A");
+  #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_A4931
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_A4931");
+  #endif     
+  #ifdef MOTOR_DRIVER_BRUSHLESS_GEARS_JYQD
+    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_GEARS_JYQD");
   #endif
-  #ifdef MOTOR_DRIVER_BRUSHLESS_MOW_JYQD
-    CONSOLE.println("MOTOR_DRIVER_BRUSHLESS_MOW_JYQD");
-  #endif 
   
+  CONSOLE.print("MOTOR_FAULT_CURRENT: ");
+  CONSOLE.println(MOTOR_FAULT_CURRENT);
   CONSOLE.print("MOTOR_OVERLOAD_CURRENT: ");
   CONSOLE.println(MOTOR_OVERLOAD_CURRENT);
   CONSOLE.print("USE_LINEAR_SPEED_RAMP: ");
@@ -399,6 +416,8 @@ void outputConfig(){
   #endif
   CONSOLE.print("ENABLE_DYNAMIC_MOWER_SPEED: ");
   CONSOLE.println(ENABLE_DYNAMIC_MOWER_SPEED);
+  CONSOLE.print("MOW_FAULT_CURRENT: ");
+  CONSOLE.println(MOW_FAULT_CURRENT);
   CONSOLE.print("MOW_OVERLOAD_CURRENT: ");
   CONSOLE.println(MOW_OVERLOAD_CURRENT);
   CONSOLE.print("ENABLE_OVERLOAD_DETECTION: ");
@@ -407,6 +426,8 @@ void outputConfig(){
   CONSOLE.println(ENABLE_FAULT_DETECTION);
   CONSOLE.print("ENABLE_FAULT_OBSTACLE_AVOIDANCE: ");
   CONSOLE.println(ENABLE_FAULT_OBSTACLE_AVOIDANCE);
+  CONSOLE.print("ENABLE_RPM_FAULT_DETECTION: ");
+  CONSOLE.println(ENABLE_RPM_FAULT_DETECTION);
   CONSOLE.print("ENABLE_DYNAMIC_MOWMOTOR: ");
   CONSOLE.println(ENABLE_DYNAMIC_MOWMOTOR);
   #ifdef SONAR_INSTALLED
@@ -921,7 +942,7 @@ void run(){
     else {      
       if (RAIN_ENABLE){
         if (rainDriver.triggered()){
-          CONSOLE.println("RAIN TRIGGERED");
+          //CONSOLE.println("RAIN TRIGGERED");
           activeOp->onRainTriggered();
         }
       }    
@@ -962,6 +983,12 @@ void run(){
       stateButton = 0;  // reset button state
       stateSensor = SENS_STOP_BUTTON;
       cmdSwitchOffRobot();
+    } else if (stateButton == 12){
+      stateButton = 0; // reset button state
+      stateSensor = SENS_STOP_BUTTON;
+      #ifdef __linux__
+        WiFi.startWifiProtectedSetup();
+      #endif
     }
 
     // update operation type      
