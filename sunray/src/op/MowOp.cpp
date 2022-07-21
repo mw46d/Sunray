@@ -94,6 +94,14 @@ void MowOp::onRainTriggered(){
     }
 }
 
+void MowOp::onTempOutOfRangeTriggered(){
+    if (DOCKING_STATION){
+        CONSOLE.println("TEMP OUT-OF-RANGE TRIGGERED");
+        stateSensor = SENS_TEMP_OUT_OF_RANGE;
+        dockOp.dockReasonRainTriggered = true;
+        changeOp(dockOp);              
+    }
+}
 
 void MowOp::onBatteryLowShouldDock(){    
     changeOp(dockOp);
@@ -163,7 +171,7 @@ void MowOp::onMotorError(){
             CONSOLE.print("MowOp::onMotorError motorErrorCounter=");       
             CONSOLE.println(motorErrorCounter);
             if (maps.wayMode != WAY_DOCK){
-                if (motorErrorCounter < 3){                     
+                if (motorErrorCounter < 5){                     
                     //stateSensor = SENS_MOTOR_ERROR;
                     changeOp(escapeReverseOp, true);     // trigger obstacle avoidance 
                     return;

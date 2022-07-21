@@ -20,8 +20,8 @@ void SerialRobotDriver::begin(){
   encoderTicksMow = 0;
   chargeVoltage = 0;
   chargeCurrent = 0;  
-  batteryVoltage = 0;
-  cpuTemp = 0;
+  batteryVoltage = 28;
+  cpuTemp = 30;
   mowCurr = 0;
   motorLeftCurr = 0;
   motorRightCurr = 0;
@@ -176,7 +176,11 @@ bool SerialRobotDriver::getMcuFirmwareVersion(String &name, String &ver){
 }
 
 float SerialRobotDriver::getCpuTemperature(){
-  return cpuTemp;
+  #ifdef __linux__
+    return cpuTemp;
+  #else
+    return -9999;
+  #endif
 }
 
 void SerialRobotDriver::updateCpuTemperature(){
@@ -649,9 +653,9 @@ void SerialBatteryDriver::updateBatteryTemperature(){
 
 float SerialBatteryDriver::getBatteryTemperature(){
   #ifdef __linux__
-    return batteryTemp;
+    return -9999; //batteryTemp; // linux reported bat temp not useful as seem to be constant 31 degree
   #else
-    return 0;
+    return -9999;
   #endif
 }
 
@@ -688,9 +692,9 @@ float SerialBatteryDriver::getBatteryVoltage(){
     if (serialRobot.mcuCommunicationLost){
       // return 0 volt if MCU PCB is connected and powered-off (Linux will shutdown)
       //if (!mcuBoardPoweredOn) return 0;
-      // return 30 volts if MCU PCB is not connected (so Linux can be tested without MCU PCB 
+      // return 28 volts if MCU PCB is not connected (so Linux can be tested without MCU PCB 
       // and will not shutdown if mower is not connected)      
-      return 30;      
+      return 28;      
     }
   #endif         
   return serialRobot.batteryVoltage;

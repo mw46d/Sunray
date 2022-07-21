@@ -116,7 +116,7 @@ Sensor stateSensor = SENS_NONE; // last triggered sensor
 unsigned long controlLoops = 0;
 String stateOpText = "";  // current operation as text
 String gpsSolText = ""; // current gps solution as text
-float stateTemp = 0; // degreeC
+float stateTemp = 20; // degreeC
 //float stateHumidity = 0; // percent
 unsigned long stateInMotionLastTime = 0;
 bool stateChargerConnected = false;
@@ -864,16 +864,21 @@ void run(){
   // temp
   if (millis() > nextTempTime){
     nextTempTime = millis() + 60000;    
-    stateTemp = batteryDriver.getBatteryTemperature();
-    statTempMin = min(statTempMin, stateTemp);
-    statTempMax = max(statTempMax, stateTemp);
+    float batTemp = batteryDriver.getBatteryTemperature();
+    float cpuTemp = robotDriver.getCpuTemperature();    
     CONSOLE.print("batTemp=");
-    CONSOLE.print(stateTemp,1);
-    float cpuTemp = robotDriver.getCpuTemperature();
+    CONSOLE.print(stateTemp,0);
     CONSOLE.print("  cpuTemp=");
     CONSOLE.print(cpuTemp,0);    
     //logCPUHealth();
-    CONSOLE.println();
+    CONSOLE.println();    
+    if (batTemp < -999){
+      stateTemp = cpuTemp;
+    } else {
+      stateTemp = batTemp;    
+    }
+    statTempMin = min(statTempMin, stateTemp);
+    statTempMax = max(statTempMax, stateTemp);    
   }
   
   // IMU
@@ -940,6 +945,14 @@ void run(){
       activeOp->onBatteryUndervoltage();
     } 
     else {      
+      if (USE_TEMP_SENSOR){
+        if (stateTemp > DOCK_OVERHEAT_TEMP){
+          activeOp->onTempOutOfRangeTriggered();
+        } 
+        else if (stateTemp < DOCK_TOO_COLD_TEMP){
+          activeOp->onTempOutOfRangeTriggered();
+        }
+      }
       if (RAIN_ENABLE){
         if (rainDriver.triggered()){
           //CONSOLE.println("RAIN TRIGGERED");
