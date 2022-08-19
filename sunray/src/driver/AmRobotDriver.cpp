@@ -634,9 +634,8 @@ void AmBumperDriver::begin(){
 }
 
 void AmBumperDriver::getTriggeredBumper(bool &leftBumper, bool &rightBumper){
-  const uint32_t now = millis();
-  leftBumper = leftTriggeredSince != 0 && (now - leftTriggeredSince) > triggerTime;
-  rightBumper = rightTriggeredSince != 0 && (now - rightTriggeredSince) > triggerTime;
+  leftBumper = getLeftBumper();
+  rightBumper = getRightBumper();
 }
 
 bool AmBumperDriver::obstacle(){
@@ -644,6 +643,14 @@ bool AmBumperDriver::obstacle(){
   getTriggeredBumper(left, right);
 
   return left || right;
+}
+
+bool AmBumperDriver::getLeftBumper(){
+  return leftTriggeredSince != 0 && (millis() - leftTriggeredSince) > triggerTime;
+}
+
+bool AmBumperDriver::getRightBumper(){
+  return rightTriggeredSince != 0 && (millis() - rightTriggeredSince) > triggerTime;
 }
 
 

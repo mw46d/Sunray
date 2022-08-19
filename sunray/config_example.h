@@ -258,12 +258,14 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // robot1/op            (current robot operation as text)
 // robot1/gps/sol       (current gps solution as text)
 // robot1/gps/pos       (current gps position as text)
+// ... lot of other information -> see comm.cpp or check with your MQTT Explorer
 //#define ENABLE_MQTT  true                           // start MQTT client?  (true for yes, false for no)
 #define ENABLE_MQTT  false
 #define MQTT_TOPIC_PREFIX  "robot1"                 // the MQTT topic prefix for your robot 
 #define MQTT_SERVER  "192.168.2.47"                 // your MQTT broker IP or hostname (e.g. "broker.mqtt-dashboard.com")
 #define MQTT_PORT  1883
-
+#define MQTT_USER "user"
+#define MQTT_PASS "pass"
 
 // ------ ultrasonic sensor -----------------------------
 // see Wiki on how to install the ultrasonic sensors: 
@@ -292,11 +294,11 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 // see Wiki on how to install bumperduino or freewheel sensor:
 // https://wiki.ardumower.de/index.php?title=Bumper_sensor
 // https://wiki.ardumower.de/index.php?title=Free_wheel_sensor
-// #define BUMPER_ENABLE true
+//#define BUMPER_ENABLE true
 #define BUMPER_ENABLE false
 #define BUMPER_DEADTIME 1000  // linear motion dead-time (ms) after bumper is allowed to trigger
-#define BUMPER_TRIGGER_DELAY  2000 // bumper must be active for (ms) to trigger
-
+#define BUMPER_TRIGGER_DELAY  0 // bumper must be active for (ms) to trigger
+#define BUMPER_MAX_TRIGGER_TIME 30  // if bumpersensor stays permanent triggered mower will stop with bumper error (time in seconds; 0 = disabled)
 
 // ----- battery charging current measurement (INA169) --------------
 // the Marotronics charger outputs max 1.5A 
@@ -379,7 +381,8 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define KIDNAP_DETECT true  // recommended
 //#define KIDNAP_DETECT false
 #define KIDNAP_DETECT_ALLOWED_PATH_TOLERANCE 1.0  // allowed path tolerance (m) 
-
+#define KIDNAP_DETECT_ALLOWED_PATH_TOLERANCE_DOCK_UNDOCK 0.2  // allowed path tolerance (m) 
+#define KIDNAP_DETECT_DISTANCE_DOCK_UNDOCK 2  // distance from dock in (m) to use KIDNAP_DETECT_ALLOWED_PATH_TOLERANCE_DOCK_UNDOCK
 
 // ------ docking --------------------------------------
 // is a docking station available?
@@ -392,6 +395,9 @@ Also, you may choose the serial port below for serial monitor output (CONSOLE).
 #define DOCK_AUTO_START true     // robot will automatically continue mowing after docked automatically
 //#define DOCK_AUTO_START false      // robot will not automatically continue mowing after docked automatically
 
+#define DOCK_UNDOCK_TRACKSLOW_DISTANCE 5 // set distance (m) from dock for trackslow (speed limit)
+
+#define UNDOCK_IGNORE_GPS_DISTANCE 2 // set distance (m) from dock to ignore gps while undocking
 
 // ---- path tracking -----------------------------------
 
