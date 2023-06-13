@@ -34,7 +34,9 @@ void MowOp::begin(){
 
     //dockingInitiatedByOperator = false;
     //dockReasonRainTriggered = false;
-    if ((initiatedbyOperator) || (lastMapRoutingFailed)) maps.clearObstacles();
+
+    if (((initiatedByOperator) && (previousOp == &idleOp)) || (lastMapRoutingFailed))  maps.clearObstacles();
+
     if (maps.startMowing(stateX, stateY)){
         if (maps.nextPoint(true, stateX, stateY)) {
             lastFixTime = millis();                
@@ -90,6 +92,7 @@ void MowOp::onRainTriggered(){
         CONSOLE.println("RAIN TRIGGERED");
         stateSensor = SENS_RAIN;
         dockOp.dockReasonRainTriggered = true;
+        dockOp.setInitiatedByOperator(false);
         changeOp(dockOp);              
     }
 }
@@ -99,11 +102,13 @@ void MowOp::onTempOutOfRangeTriggered(){
         CONSOLE.println("TEMP OUT-OF-RANGE TRIGGERED");
         stateSensor = SENS_TEMP_OUT_OF_RANGE;
         dockOp.dockReasonRainTriggered = true;
+        dockOp.setInitiatedByOperator(false);
         changeOp(dockOp);              
     }
 }
 
 void MowOp::onBatteryLowShouldDock(){    
+    dockOp.setInitiatedByOperator(false);
     changeOp(dockOp);
 }
 
@@ -193,9 +198,11 @@ void MowOp::onMotorError(){
 }
 
 void MowOp::onTargetReached(){
-    maps.clearObstacles(); // clear obstacles if target reached
-    motorErrorCounter = 0; // reset motor error counter if target reached
-    stateSensor = SENS_NONE; // clear last triggered sensor
+    if (maps.wayMode == WAY_MOW){    
+        maps.clearObstacles(); // clear obstacles if target reached
+        motorErrorCounter = 0; // reset motor error counter if target reached
+        stateSensor = SENS_NONE; // clear last triggered sensor
+    }
 }
 
 
@@ -239,8 +246,10 @@ void MowOp::onNoFurtherWaypoints(){
     CONSOLE.println("mowing finished!");
     if (!finishAndRestart){             
         if (DOCKING_STATION){
+            dockOp.setInitiatedByOperator(false);
             changeOp(dockOp);               
         } else {
+            idleOp.setInitiatedByOperator(false);
             changeOp(idleOp); 
         }
     }
