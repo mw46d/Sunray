@@ -67,6 +67,7 @@ class UBLOX : public GpsDriver {
     uint8_t mwHour;
     uint8_t mwMinute;
     uint8_t mwSecond;
+    uint32_t mwSpeed;
 
     void begin();
     void addchk(int b);
