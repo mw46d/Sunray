@@ -1812,6 +1812,10 @@ bool Map::findPath(Point &src, Point &dst){
       CONSOLE.println("OUT OF MEMORY");
       return false;
     }
+
+    // For validating a potential route, we will use  'linePolygonIntersectPoint' and check for intersections between route start point 
+    // and end point. To have something to check intersection with, we offset the perimeter (make bigger) and exclusions
+    //  (maker schmaller) and use them as 'obstacles'.
     
     if (!polygonOffset(perimeterPoints, pathFinderObstacles.polygons[idx], 0.04)) return false;
     idx++;
