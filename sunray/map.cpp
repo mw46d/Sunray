@@ -1146,26 +1146,25 @@ bool Map::mowingCompleted(){
   return (mowPointsIdx >= mowPoints.numPoints-1);
 } 
 
-// find start point for path finder on line from src to dst
-// that is insider perimeter and outside exclusions
+// check if point is inside perimeter and outside exclusions/obstacles
 bool Map::checkpoint(float x, float y){
   Point src;
   src.setXY(x, y);
   if (!maps.pointIsInsidePolygon( maps.perimeterPoints, src)){
-    return true;
+    return false;
   }
   for (int i=0; i < maps.exclusions.numPolygons; i++){
     if (maps.pointIsInsidePolygon( maps.exclusions.polygons[i], src)){
-       return true;
+       return false;
     }
   } 
   for (int i=0; i < obstacles.numPolygons; i++){
     if (maps.pointIsInsidePolygon( maps.obstacles.polygons[i], src)){
-       return true;
+       return false;
     }
   }  
 
-  return false;
+  return true;
 }
 
 // find start point for path finder on line from src to dst
@@ -1674,6 +1673,12 @@ float Map::calcHeuristic(Point &pos0, Point &pos1) {
   //return distance(pos0, pos1) ;  
 }
   
+
+// given a start node, we check potential next node with all obstacle nodes:
+// 1. if start node is outside perimeter, it must be within a certain distance to section point with perimeter (to next node), 
+//  and must have section count of one
+// 2. if start node is inside exclusion, it must be within a certain distance to section point with exclusion (to next node)  
+// 3. otherwise: line between start node and next node node must not intersect any obstacle  
   
 int Map::findNextNeighbor(NodeList &nodes, PolygonList &obstacles, Node &node, int startIdx) {
   Point dbgSrcPt(4.2, 6.2);
