@@ -143,6 +143,7 @@ void Motor::speedPWM ( int pwmLeft, int pwmRight, int pwmMow )
 //      V     = (VR + VL) / 2       =>  VR = V + omega * L/2
 //      omega = (VR - VL) / L       =>  VL = V - omega * L/2
 void Motor::setLinearAngularSpeed(float linear, float angular, bool useLinearRamp){
+   static float last_linear = 0.0;
    setLinearAngularSpeedTimeout = millis() + 1000;
    setLinearAngularSpeedTimeoutActive = true;
    if ((activateLinearSpeedRamp) && (useLinearRamp)) {
@@ -155,15 +156,19 @@ void Motor::setLinearAngularSpeed(float linear, float angular, bool useLinearRam
    float lspeed = linearSpeedSet - angularSpeedSet * (wheelBaseCm /100.0 /2);          
    // RPM = V / (2*PI*r) * 60
    motorRightRpmSet =  rspeed / (PI*(((float)wheelDiameter)/1000.0)) * 60.0;   
-   motorLeftRpmSet = lspeed / (PI*(((float)wheelDiameter)/1000.0)) * 60.0;   
-//   CONSOLE.print("setLinearAngularSpeed ");
-//   CONSOLE.print(linear);
-//   CONSOLE.print(",");
-//   CONSOLE.print(angular); 
-//   CONSOLE.print(",");
-//   CONSOLE.print(lspeed);
-//   CONSOLE.print(",");
-//   CONSOLE.println(rspeed);
+   motorLeftRpmSet = lspeed / (PI*(((float)wheelDiameter)/1000.0)) * 60.0;
+
+    if (false && last_linear != linear) {
+        last_linear = linear;
+        CONSOLE.print("setLinearAngularSpeed changed linear (");
+        CONSOLE.print(linear);
+        CONSOLE.print(", ");
+        CONSOLE.print(angular);
+        CONSOLE.print(", ");
+        CONSOLE.print(lspeed);
+        CONSOLE.print(", ");
+        CONSOLE.println(rspeed);
+    }
 }
 
 
@@ -609,7 +614,7 @@ void Motor::test(){
     if (millis() > nextControlTime){
       nextControlTime = millis() + 20;
       if ((slowdown) && ((motorLeftTicks + ticksPerRevolution  > stopTicks)||(motorRightTicks + ticksPerRevolution > stopTicks))){  //Letzte halbe drehung verlangsamen
-        pwmLeft = pwmRight = 20;
+        pwmLeft = pwmRight = 50;
         slowdown = false;
       }    
       if (millis() > nextInfoTime){      

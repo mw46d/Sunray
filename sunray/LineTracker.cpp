@@ -162,6 +162,7 @@ void trackLine(bool runControl){
 
   if (!angleToTargetFits){
     // angular control (if angle to far away, rotate to next waypoint)
+    CONSOLE.println("trackLine(): !angleToTargetFits linear-> 0");
     linear = 0;
     angular = 29.0 / 180.0 * PI; //  29 degree/s (0.5 rad/s);               
     if ((!rotateLeft) && (!rotateRight)){ // decide for one rotation direction (and keep it)
@@ -223,19 +224,28 @@ void trackLine(bool runControl){
 
     if (maps.trackSlow && trackslow_allowed) {
       // planner forces slow tracking (e.g. docking etc)
+      CONSOLE.println("trackLine(): maps.trackSlow && trackslow_allowed linear-> 0.1");
       linear = 0.1;           
     } else if (     ((setSpeed > 0.2) && (maps.distanceToTargetPoint(stateX, stateY) < 0.5) && (!straight))   // approaching
           || ((linearMotionStartTime != 0) && (millis() < linearMotionStartTime + 3000))                      // leaving  
        ) 
     {
+      CONSOLE.println("trackLine(): approaching/leaving linear-> 0.1");
       linear = 0.1; // reduce speed when approaching/leaving waypoints          
     } 
     else {
-      if (gps.solution == SOL_FLOAT)        
+      if (gps.solution == SOL_FLOAT) {
         linear = min(setSpeed, 0.1); // reduce speed for float solution
-      else
+        CONSOLE.print("trackLine(): float linear-> "); CONSOLE.println(linear);
+      }
+      else {
         linear = setSpeed;         // desired speed
-      if (sonar.nearObstacle()) linear = 0.1; // slow down near obstacles
+        CONSOLE.print("trackLine(): normal linear-> "); CONSOLE.println(linear);
+      }
+      if (sonar.nearObstacle()) {
+	linear = 0.1; // slow down near obstacles
+        CONSOLE.print("trackLine(): sonar.nearObstacle() linear-> "); CONSOLE.println(linear);
+      }
     }      
     // slow down speed in case of overload and overwrite all prior speed 
     if ( (motor.motorLeftOverload) || (motor.motorRightOverload) || (motor.motorMowOverload) ){
@@ -279,11 +289,13 @@ void trackLine(bool runControl){
 
   if ((gps.solution == SOL_FIXED) || (gps.solution == SOL_FLOAT)){        
     if (abs(linear) > 0.06) {
-      if ((millis() > linearMotionStartTime + 5000) && (stateGroundSpeed < 0.03)){
+      unsigned long t = millis();
+      if ((t > linearMotionStartTime + 5000) && (stateGroundSpeed < 0.03)){
         // if in linear motion and not enough ground speed => obstacle
         //if ( (GPS_SPEED_DETECTION) && (!maps.isUndocking()) ) { 
         if (GPS_SPEED_DETECTION) {         
           CONSOLE.println("gps no speed => obstacle!");
+	  CONSOLE.print("mw linear= "); CONSOLE.print(linear); CONSOLE.print("  t= "); CONSOLE.print(t); CONSOLE.print("  linearMotionStartTime + 5000= "); CONSOLE.print(linearMotionStartTime + 5000); CONSOLE.print("  stateGroundSpeed= "); CONSOLE.println(stateGroundSpeed);
           triggerObstacle();
           return;
         }

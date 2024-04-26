@@ -146,7 +146,21 @@ bool Sonar::obstacle()
 {
 #ifdef SONAR_INSTALLED
   if (!enabled) return false;
-  return ((distanceLeft < triggerLeftBelow) || (distanceCenter < triggerCenterBelow) || (distanceRight < triggerRightBelow));
+  bool res = ((distanceLeft < triggerLeftBelow) || (distanceCenter < triggerCenterBelow) || (distanceRight < triggerRightBelow));
+  if (res) {
+    CONSOLE.print("Sonar::obstacle() sensor true  ");
+    if (distanceLeft < triggerLeftBelow) {
+      CONSOLE.print("  distanceLeft= "); CONSOLE.print(distanceLeft);
+    }
+    if (distanceCenter < triggerCenterBelow) {
+      CONSOLE.print("  distanceCenter= "); CONSOLE.print(distanceCenter);
+    }
+    if (distanceRight < triggerRightBelow) {
+      CONSOLE.print("  distanceRight= "); CONSOLE.print(distanceRight);
+    }
+    CONSOLE.println("");
+  }
+  return res;
 #else
   return false;
 #endif
@@ -156,12 +170,26 @@ bool Sonar::nearObstacle()
 {
 #ifdef SONAR_INSTALLED
   if (!enabled) return false;
-  int nearZone = 30; // cm
-  if ((nearObstacleTimeout != 0) && (millis() < nearObstacleTimeout)) return true;
+  int nearZone = 10; // marco 30; // cm
+  if ((nearObstacleTimeout != 0) && (millis() < nearObstacleTimeout)) {
+    CONSOLE.println("Sonar::nearObstacle() time true");
+    return true;
+  }
   nearObstacleTimeout = 0;
   bool res = ((distanceLeft < triggerLeftBelow + nearZone) || (distanceCenter < triggerCenterBelow + nearZone) || (distanceRight < triggerRightBelow + nearZone));
   if (res) {
     nearObstacleTimeout = millis() + 5000;
+    CONSOLE.print("Sonar::nearObstacle() sensor true  ");
+    if (distanceLeft < triggerLeftBelow + nearZone) {
+      CONSOLE.print("  distanceLeft= "); CONSOLE.print(distanceLeft);
+    }
+    if (distanceCenter < triggerCenterBelow + nearZone) {
+      CONSOLE.print("  distanceCenter= "); CONSOLE.print(distanceCenter);
+    }
+    if (distanceRight < triggerRightBelow + nearZone) {
+      CONSOLE.print("  distanceRight= "); CONSOLE.print(distanceRight);
+    }
+    CONSOLE.println("");
   }
   return res;
 #else
